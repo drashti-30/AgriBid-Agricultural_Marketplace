@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="AgriBid Admin Dashboard">
+    <title>AgriBid — Admin Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = { theme: { extend: { colors: { agrigreen: { 50: "#f0fdf4", 100: "#dcfce7", 500: "#22c55e", 600: "#16a34a", 700: "#15803d", 800: "#166534", 900: "#14532d" } } } } };
+    </script>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body class="min-h-screen bg-slate-50 text-slate-800">
+    <nav class="bg-slate-900 text-white shadow-lg">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16">
+                <div class="flex items-center gap-3"><div class="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center font-bold">AB</div><div><h1 class="text-xl font-bold">AgriBid</h1><p class="text-xs text-slate-300">Admin Dashboard</p></div></div>
+                <div class="hidden md:flex items-center gap-5 text-sm font-medium"><a href="/" class="text-slate-300 hover:text-white">Home</a><a href="/auctions.html" class="text-slate-300 hover:text-white">Auctions</a><a href="/farmer-dashboard.html" class="text-slate-300 hover:text-white">Farmer</a><a href="/buyer-dashboard.html" class="text-slate-300 hover:text-white">Buyer</a><button type="button" data-theme-toggle class="rounded-lg border border-slate-600 px-4 py-2 text-slate-200 hover:bg-slate-800">🌙 Dark Mode</button><button id="logoutButton" class="rounded-lg bg-white px-4 py-2 text-slate-900">Logout</button></div>
+                <button id="mobileMenuButton" class="md:hidden rounded-lg p-2 hover:bg-slate-800">☰</button>
+            </div>
+            <div id="mobileMenu" class="hidden md:hidden pb-4 space-y-2"><a href="/" class="block rounded-lg px-3 py-2 hover:bg-slate-800">Home</a><a href="/auctions.html" class="block rounded-lg px-3 py-2 hover:bg-slate-800">Auctions</a><a href="/farmer-dashboard.html" class="block rounded-lg px-3 py-2 hover:bg-slate-800">Farmer Dashboard</a><a href="/buyer-dashboard.html" class="block rounded-lg px-3 py-2 hover:bg-slate-800">Buyer Dashboard</a></div>
+        </div>
+    </nav>
+
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div id="dashboardAlert"></div>
+        <section class="bg-slate-900 text-white rounded-3xl p-6 sm:p-8 mb-8">
+            <p class="text-sm font-semibold text-slate-300">ADMINISTRATION</p>
+            <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5 mt-1"><div><h2 class="text-3xl sm:text-4xl font-bold">Marketplace Control Center</h2><p class="mt-2 text-slate-300">Monitor AgriBid activity, review farmers and keep the marketplace healthy.</p></div><span class="inline-flex rounded-xl bg-white/10 px-4 py-3 text-sm font-semibold">Demo Admin Mode</span></div>
+        </section>
+
+        <section class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
+            <div class="dashboard-stat-card bg-white p-4"><p class="text-xs text-slate-500">Auctions</p><p id="totalAuctions" class="text-2xl font-bold mt-2">0</p></div>
+            <div class="dashboard-stat-card bg-white p-4"><p class="text-xs text-slate-500">Active</p><p id="activeAuctions" class="text-2xl font-bold text-green-700 mt-2">0</p></div>
+            <div class="dashboard-stat-card bg-white p-4"><p class="text-xs text-slate-500">Scheduled</p><p id="scheduledAuctions" class="text-2xl font-bold text-sky-600 mt-2">0</p></div>
+            <div class="dashboard-stat-card bg-white p-4"><p class="text-xs text-slate-500">Bids</p><p id="totalBids" class="text-2xl font-bold text-blue-700 mt-2">0</p></div>
+            <div class="dashboard-stat-card bg-white p-4"><p class="text-xs text-slate-500">Farmers</p><p id="totalFarmers" class="text-2xl font-bold mt-2">0</p></div>
+            <div class="dashboard-stat-card bg-white p-4"><p class="text-xs text-slate-500">Pending</p><p id="pendingFarmers" class="text-2xl font-bold text-amber-600 mt-2">0</p></div>
+        </section>
+
+        <section class="bg-white rounded-2xl border border-slate-200 shadow-sm mb-6">
+            <div class="px-6 py-5 border-b border-slate-200"><h3 class="text-lg font-bold">Marketplace Analytics</h3><p class="text-sm text-slate-500 mt-1">Compare bidding activity across auctions and farmers.</p></div>
+            <div id="adminInsights" class="p-6"></div>
+        </section>
+
+        <section class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+            <div class="lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm">
+                <div class="px-6 py-5 border-b border-slate-200"><h3 class="text-lg font-bold">Auction Monitoring</h3><p class="text-sm text-slate-500 mt-1">Overview of current marketplace listings.</p></div>
+                <div class="table-responsive"><table class="table dashboard-table mb-0"><thead><tr><th>Crop</th><th>Farmer</th><th>Bid</th><th>Status</th><th>Bids</th></tr></thead><tbody id="adminAuctionTable"></tbody></table></div>
+            </div>
+            <div class="bg-white rounded-2xl border border-slate-200 shadow-sm">
+                <div class="px-6 py-5 border-b border-slate-200"><h3 class="text-lg font-bold">Marketplace Activity</h3><p class="text-sm text-slate-500 mt-1">Quick health indicators.</p></div>
+                <div id="adminActivity" class="p-6 space-y-4"></div>
+            </div>
+        </section>
+
+        <section class="bg-white rounded-2xl border border-slate-200 shadow-sm mb-6">
+            <div class="px-6 py-5 border-b border-slate-200"><h3 class="text-lg font-bold">Farmer Verification</h3><p class="text-sm text-slate-500 mt-1">Review verification status. Authentication and authorization will be added in the later practical.</p></div>
+            <div class="table-responsive"><table class="table dashboard-table mb-0"><thead><tr><th>Farmer</th><th>Location</th><th>Phone</th><th>Status</th><th>Action</th></tr></thead><tbody id="farmerVerificationTable"></tbody></table></div>
+        </section>
+
+        <section id="adminNotifications" class="bg-white rounded-2xl border border-slate-200 shadow-sm">
+            <div class="px-6 py-5 border-b border-slate-200 flex items-center justify-between gap-3"><div><h3 class="text-lg font-bold">Notifications</h3><p class="text-sm text-slate-500 mt-1">System-level marketplace updates.</p></div><div class="flex items-center gap-2"><button id="markAllNotificationsRead" class="text-xs font-semibold text-green-600">Mark all read</button><span id="notificationBadge" class="rounded-full bg-red-100 px-3 py-1 text-xs font-semibold text-red-700">0 new</span></div></div>
+            <div id="notificationList"></div>
+        </section>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="/dashboard-common.js"></script>
+    <script src="/admin-dashboard.js"></script>
+</body>
+</html>

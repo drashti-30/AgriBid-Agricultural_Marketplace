@@ -1,0 +1,26 @@
+{
+  "name": "agribid",
+  "version": "1.0.0",
+  "description": "AgriBid Smart Crop Marketplace & Auction Platform",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js",
+    "db:test": "node migration/test_db.js",
+    "migrate": "node migration/migrate.js"
+  },
+  "keywords": [
+    "agribid",
+    "auction",
+    "agriculture",
+    "mysql",
+    "nodejs"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "dotenv": "^17.2.2",
+    "jsonwebtoken": "^9.0.3",
+    "mysql2": "^3.14.3"
+  }
+}

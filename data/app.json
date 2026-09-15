@@ -1,0 +1,10 @@
+{
+    "applicationName": "AgriBid",
+    "version": "1.0.0",
+    "description": "Smart Crop Marketplace & Auction Platform",
+    "roles": [
+        "Farmer",
+        "Buyer",
+        "Admin"
+    ]
+}

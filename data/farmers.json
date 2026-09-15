@@ -1,0 +1,30 @@
+[
+    {
+        "id": 1,
+        "name": "Rajesh Patel",
+        "location": "Ahmedabad, Gujarat",
+        "phone": "9876543210",
+        "verified": true
+    },
+    {
+        "id": 2,
+        "name": "Meena Shah",
+        "location": "Anand, Gujarat",
+        "phone": "9876501234",
+        "verified": true
+    },
+    {
+        "id": 3,
+        "name": "Kiran Desai",
+        "location": "Rajkot, Gujarat",
+        "phone": "9898989898",
+        "verified": false
+    },
+    {
+        "id": 4,
+        "name": "Mahesh Patel",
+        "location": "",
+        "phone": "",
+        "verified": false
+    }
+]

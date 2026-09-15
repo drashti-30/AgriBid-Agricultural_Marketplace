@@ -1,0 +1,26 @@
+[
+  {
+    "id": "welcome-farmer",
+    "role": "Farmer",
+    "title": "Welcome to AgriBid",
+    "message": "Your farmer dashboard is ready. Start managing your crop auctions.",
+    "icon": "\ud83c\udf3e",
+    "time": "2026-09-12T09:00:00Z"
+  },
+  {
+    "id": "welcome-buyer",
+    "role": "Buyer",
+    "title": "Welcome to AgriBid",
+    "message": "Explore live crop auctions and place competitive bids.",
+    "icon": "\ud83d\uded2",
+    "time": "2026-09-12T09:00:00Z"
+  },
+  {
+    "id": "admin-system",
+    "role": "Admin",
+    "title": "Admin dashboard ready",
+    "message": "Review marketplace activity, farmers, auctions and bidding activity.",
+    "icon": "\ud83d\udee1\ufe0f",
+    "time": "2026-09-12T09:00:00Z"
+  }
+]

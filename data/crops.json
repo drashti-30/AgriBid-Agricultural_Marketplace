@@ -1,0 +1,43 @@
+[
+    {
+        "id": 1,
+        "name": "Wheat",
+        "category": "Grains",
+        "quantity": 500,
+        "unit": "kg",
+        "quality": "Grade A",
+        "basePrice": 20
+    },
+    {
+        "id": 2,
+        "name": "Rice",
+        "category": "Grains",
+        "quantity": 800,
+        "unit": "kg",
+        "quality": "Premium",
+        "basePrice": 35
+    },
+    {
+        "id": 3,
+        "name": "Tomato",
+        "category": "Vegetables",
+        "quantity": 300,
+        "unit": "kg",
+        "quality": "Grade A",
+        "basePrice": 25
+    },
+    {
+        "id": 4,
+        "name": "Cotton",
+        "category": "Cash Crops",
+        "quantity": 1000,
+        "unit": "kg",
+        "quality": "Premium",
+        "basePrice": 65
+    },
+    {
+        "id": 5,
+        "name": "Carrot",
+        "category": "Vegetables"
+    }
+]
