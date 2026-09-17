@@ -5,6 +5,7 @@ const { URL } = require("url");
 const db = require("./db");
 const { hashPassword, comparePassword, generateToken, sanitizeUser } = require("./utils/auth");
 const authenticate = require("./middleware/auth");
+const { authorize } = require("./middleware/roles");
 
 const PUBLIC_DIRECTORY = path.join(__dirname, "public");
 const PORT = Number(process.env.PORT || 3000);
@@ -145,6 +146,25 @@ function serveStaticFile(res, pathname) {
     res.writeHead(200, { "Content-Type": contentTypes[extension] || "application/octet-stream" });
     res.end(fs.readFileSync(filePath));
     return true;
+}
+
+async function resolveCropId(body, fallbackCropId = null) {
+    const suppliedCropId = body.cropId ?? fallbackCropId;
+    if (suppliedCropId !== null && suppliedCropId !== undefined && suppliedCropId !== "") {
+        return toNumber(suppliedCropId);
+    }
+
+    const cropName = String(body.cropName || "").trim();
+    if (!cropName) return null;
+
+    const [rows] = await db.execute(`
+        SELECT crop_id
+        FROM crops
+        WHERE LOWER(name) = LOWER(?)
+        LIMIT 1
+    `, [cropName]);
+
+    return rows.length ? Number(rows[0].crop_id) : null;
 }
 
 const server = http.createServer(async (req, res) => {
@@ -358,11 +378,17 @@ const server = http.createServer(async (req, res) => {
             const [rows] = await db.execute(`
                 SELECT
                     f.farmer_id AS id,
+                    f.user_id AS userId,
                     u.name,
                     f.farm_location AS location,
                     u.phone,
                     CASE
-                        WHEN f.verification_status = 'approved' THEN true
+                        WHEN EXISTS (
+                            SELECT 1
+                            FROM verifications v
+                            WHERE v.user_id = u.user_id
+                              AND v.status = 'approved'
+                        ) THEN true
                         ELSE false
                     END AS verified
                 FROM farmers f
@@ -441,8 +467,31 @@ const server = http.createServer(async (req, res) => {
         }
 
         if (pathname === "/api/auctions" && req.method === "POST") {
+            const user = await authenticate(req, res);
+            if (!user) return;
+            req.user = user;
+
+            if (!authorize("farmer")(req, res)) return;
+
+            const [farmerRows] = await db.execute(
+                `SELECT farmer_id
+                 FROM farmers
+                 WHERE user_id = ?
+                 LIMIT 1`,
+                [req.user.user_id]
+            );
+
+            if (farmerRows.length === 0) {
+                sendJSON(res, 403, { message: "Farmer profile not found." });
+                return;
+            }
+
+            const farmerId = farmerRows[0].farmer_id;
             const body = await getRequestBody(req);
-            const validation = validateAuctionInput(body);
+            const cropId = await resolveCropId(body);
+
+            // The farmer_id used by the database always comes from the authenticated user.
+            const validation = validateAuctionInput({ ...body, farmerId, cropId });
 
             if (validation.error) {
                 sendJSON(res, 400, { message: validation.error });
@@ -463,18 +512,6 @@ const server = http.createServer(async (req, res) => {
                 return;
             }
 
-            const [farmerRows] = await db.execute(`
-                SELECT farmer_id
-                FROM farmers
-                WHERE farmer_id = ?
-                LIMIT 1
-            `, [auction.farmerId]);
-
-            if (!farmerRows.length) {
-                sendJSON(res, 404, { message: "Farmer not found." });
-                return;
-            }
-
             const [result] = await db.execute(`
                 INSERT INTO auctions (
                     farmer_id, crop_id, title, description, quantity,
@@ -484,7 +521,7 @@ const server = http.createServer(async (req, res) => {
                 )
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `, [
-                auction.farmerId,
+                farmerId,
                 auction.cropId,
                 auction.title,
                 auction.description,
@@ -545,6 +582,12 @@ const server = http.createServer(async (req, res) => {
         }
 
         if (pathname.startsWith("/api/auctions/") && req.method === "PATCH") {
+            const user = await authenticate(req, res);
+            if (!user) return;
+            req.user = user;
+
+            if (!authorize("farmer")(req, res)) return;
+
             const parts = pathname.split("/").filter(Boolean);
             const id = Number(parts[2]);
             const isStatusOnly = parts[3] === "status";
@@ -554,7 +597,20 @@ const server = http.createServer(async (req, res) => {
                 return;
             }
 
-            const body = await getRequestBody(req);
+            const [farmerRows] = await db.execute(
+                `SELECT farmer_id
+                 FROM farmers
+                 WHERE user_id = ?
+                 LIMIT 1`,
+                [req.user.user_id]
+            );
+
+            if (farmerRows.length === 0) {
+                sendJSON(res, 403, { message: "Farmer profile not found." });
+                return;
+            }
+
+            const farmerId = farmerRows[0].farmer_id;
 
             const [existingRows] = await db.execute(`
                 SELECT *
@@ -567,6 +623,16 @@ const server = http.createServer(async (req, res) => {
                 sendJSON(res, 404, { message: "Auction not found." });
                 return;
             }
+
+            const current = existingRows[0];
+
+            if (Number(current.farmer_id) !== Number(farmerId)) {
+                sendJSON(res, 403, { message: "You can only modify your own auctions." });
+                return;
+            }
+
+            const body = await getRequestBody(req);
+            const cropId = await resolveCropId(body, current.crop_id);
 
             if (isStatusOnly) {
                 const status = normalizeStatus(body.status);
@@ -581,13 +647,10 @@ const server = http.createServer(async (req, res) => {
                     SET status = ?
                     WHERE auction_id = ?
                 `, [status, id]);
-
             } else {
-                const current = existingRows[0];
-
                 const merged = {
-                    cropId: body.cropId ?? current.crop_id,
-                    farmerId: body.farmerId ?? current.farmer_id,
+                    cropId: cropId,
+                    farmerId: farmerId,
                     title: body.title ?? current.title,
                     description: body.description ?? current.description,
                     quantity: body.quantity ?? current.quantity,
@@ -697,10 +760,48 @@ const server = http.createServer(async (req, res) => {
         }
 
         if (pathname.startsWith("/api/auctions/") && req.method === "DELETE") {
+            const user = await authenticate(req, res);
+            if (!user) return;
+            req.user = user;
+
+            if (!authorize("farmer")(req, res)) return;
+
             const id = Number(pathname.split("/").pop());
 
             if (!Number.isInteger(id) || id <= 0) {
                 sendJSON(res, 400, { message: "Invalid auction ID." });
+                return;
+            }
+
+            const [farmerRows] = await db.execute(
+                `SELECT farmer_id
+                 FROM farmers
+                 WHERE user_id = ?
+                 LIMIT 1`,
+                [req.user.user_id]
+            );
+
+            if (farmerRows.length === 0) {
+                sendJSON(res, 403, { message: "Farmer profile not found." });
+                return;
+            }
+
+            const farmerId = farmerRows[0].farmer_id;
+
+            const [auctionRows] = await db.execute(`
+                SELECT farmer_id
+                FROM auctions
+                WHERE auction_id = ?
+                LIMIT 1
+            `, [id]);
+
+            if (!auctionRows.length) {
+                sendJSON(res, 404, { message: "Auction not found." });
+                return;
+            }
+
+            if (Number(auctionRows[0].farmer_id) !== Number(farmerId)) {
+                sendJSON(res, 403, { message: "You can only delete your own auctions." });
                 return;
             }
 
@@ -719,18 +820,18 @@ const server = http.createServer(async (req, res) => {
         }
 
         if (pathname === "/api/bids" && req.method === "POST") {
+            const user = await authenticate(req, res);
+            if (!user) return;
+            req.user = user;
+
+            if (!authorize("buyer")(req, res)) return;
+
             const body = await getRequestBody(req);
             const auctionId = Number(body.auctionId);
             const amount = toNumber(body.amount);
-            const buyerName = String(body.buyerName || "").trim();
 
             if (!Number.isInteger(auctionId) || auctionId <= 0) {
                 sendJSON(res, 400, { message: "Invalid auction ID." });
-                return;
-            }
-
-            if (!buyerName) {
-                sendJSON(res, 400, { message: "Buyer name is required." });
                 return;
             }
 
@@ -784,22 +885,20 @@ const server = http.createServer(async (req, res) => {
                     return;
                 }
 
+                // Derive buyer identity from the authenticated database user.
                 const [buyerRows] = await connection.execute(`
                     SELECT
                         b.buyer_id AS buyerId,
                         u.name AS buyerName
                     FROM buyers b
                     INNER JOIN users u ON b.user_id = u.user_id
-                    WHERE LOWER(u.name) = LOWER(?)
-                    OR LOWER(b.business_name) = LOWER(?)
+                    WHERE b.user_id = ?
                     LIMIT 1
-                `, [buyerName, buyerName]);
+                `, [req.user.user_id]);
 
                 if (!buyerRows.length) {
                     await connection.rollback();
-                    sendJSON(res, 404, {
-                        message: "Buyer not found. Please use a migrated buyer name."
-                    });
+                    sendJSON(res, 403, { message: "Buyer profile not found." });
                     return;
                 }
 
@@ -857,6 +956,104 @@ const server = http.createServer(async (req, res) => {
                 if (connection) connection.release();
             }
 
+            return;
+        }
+
+        if (pathname === "/api/notifications" && req.method === "GET") {
+            const user = await authenticate(req, res);
+            if (!user) return;
+            req.user = user;
+
+            const requestedRole = String(requestURL.searchParams.get("role") || "").trim().toLowerCase();
+            const role = String(req.user.role || "").toLowerCase();
+
+            if (requestedRole && requestedRole !== role) {
+                sendJSON(res, 403, { message: "You can only access your own role notifications." });
+                return;
+            }
+
+            let notifications = [];
+            try {
+                const fsPath = path.join(__dirname, "data", "notifications.json");
+                notifications = JSON.parse(fs.readFileSync(fsPath, "utf8"));
+            } catch (_) {
+                notifications = [];
+            }
+
+            notifications = notifications.filter(item =>
+                String(item.role || "").toLowerCase() === role || String(item.role || "").toLowerCase() === "all"
+            );
+
+            sendJSON(res, 200, notifications);
+            return;
+        }
+
+        if (pathname.startsWith("/api/farmers/") && pathname.endsWith("/verification") && req.method === "PATCH") {
+            const user = await authenticate(req, res);
+            if (!user) return;
+            req.user = user;
+
+            if (!authorize("admin")(req, res)) return;
+
+            const farmerId = Number(pathname.split("/")[3]);
+            if (!Number.isInteger(farmerId) || farmerId <= 0) {
+                sendJSON(res, 400, { message: "Invalid farmer ID." });
+                return;
+            }
+
+            const body = await getRequestBody(req);
+            if (typeof body.verified !== "boolean") {
+                sendJSON(res, 400, { message: "verified must be a boolean." });
+                return;
+            }
+
+            const [farmerRows] = await db.execute(`
+                SELECT user_id
+                FROM farmers
+                WHERE farmer_id = ?
+                LIMIT 1
+            `, [farmerId]);
+
+            if (!farmerRows.length) {
+                sendJSON(res, 404, { message: "Farmer not found." });
+                return;
+            }
+
+            const status = body.verified ? "approved" : "pending";
+            const reviewedAt = body.verified ? new Date() : null;
+
+            const [verificationRows] = await db.execute(`
+                SELECT verification_id
+                FROM verifications
+                WHERE user_id = ?
+                ORDER BY verification_id DESC
+                LIMIT 1
+            `, [farmerRows[0].user_id]);
+
+            if (verificationRows.length) {
+                await db.execute(`
+                    UPDATE verifications
+                    SET status = ?, reviewed_at = ?, rejection_reason = NULL
+                    WHERE verification_id = ?
+                `, [status, reviewedAt, verificationRows[0].verification_id]);
+            } else {
+                await db.execute(`
+                    INSERT INTO verifications
+                        (user_id, document_type, status, submitted_at, reviewed_at)
+                    VALUES (?, ?, ?, ?, ?)
+                `, [
+                    farmerRows[0].user_id,
+                    "profile-verification",
+                    status,
+                    new Date(),
+                    reviewedAt
+                ]);
+            }
+
+            sendJSON(res, 200, {
+                message: body.verified ? "Farmer verified successfully." : "Farmer marked as unverified.",
+                verified: body.verified
+            });
             return;
         }
 

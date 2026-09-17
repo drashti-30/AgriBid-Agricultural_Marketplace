@@ -784,7 +784,7 @@ async function submitBid() {
     try {
         const response = await fetch("/api/bids", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: getAuthHeaders({ "Content-Type": "application/json" }),
             body: JSON.stringify({
                 auctionId: Number(selectedAuction.id),
                 buyerName,
@@ -855,6 +855,7 @@ async function saveAuction(event) {
     event.preventDefault();
 
     const form = document.getElementById("createAuctionForm");
+
     if (!form.checkValidity()) {
         form.reportValidity();
         return;
@@ -865,75 +866,216 @@ async function saveAuction(event) {
     const category = document.getElementById("category").value;
     const quantity = Number(document.getElementById("quantity").value);
     const basePrice = Number(document.getElementById("basePrice").value);
-    const minimumIncrement = Number(document.getElementById("minimumIncrement").value);
+    const minimumIncrement = Number(
+        document.getElementById("minimumIncrement").value
+    );
+
     const startTime = document.getElementById("startTime").value;
     const endTime = document.getElementById("endTime").value;
 
-    const validationMessage = document.getElementById("auctionValidationMessage");
-    if (validationMessage) validationMessage.classList.add("d-none");
+    const latitude = document.getElementById("latitude").value;
+    const longitude = document.getElementById("longitude").value;
 
-    if (!cropName || !farmerName || !category || quantity <= 0 || basePrice <= 0 || minimumIncrement <= 0) {
+    const validationMessage =
+        document.getElementById("auctionValidationMessage");
+
+    if (validationMessage) {
+        validationMessage.classList.add("d-none");
+    }
+
+    if (
+        !cropName ||
+        !farmerName ||
+        !category ||
+        quantity <= 0 ||
+        basePrice <= 0 ||
+        minimumIncrement <= 0
+    ) {
         if (validationMessage) {
-            validationMessage.textContent = "Enter a crop, farmer, category, positive quantity, positive base price and positive bid increment.";
+            validationMessage.textContent =
+                "Enter a crop, farmer, category, positive quantity, positive base price and positive bid increment.";
             validationMessage.classList.remove("d-none");
         }
-        showAuctionAlert("Please enter valid auction details.", "warning");
+
+        showAuctionAlert(
+            "Please enter valid auction details.",
+            "warning"
+        );
+
         return;
     }
 
-    if (!startTime || !endTime || new Date(endTime) <= new Date(startTime)) {
+    if (
+        !startTime ||
+        !endTime ||
+        new Date(endTime) <= new Date(startTime)
+    ) {
         if (validationMessage) {
-            validationMessage.textContent = "End time must be later than the start time.";
+            validationMessage.textContent =
+                "End time must be later than the start time.";
             validationMessage.classList.remove("d-none");
         }
-        showAuctionAlert("End time must be later than the start time.", "warning");
+
+        showAuctionAlert(
+            "End time must be later than the start time.",
+            "warning"
+        );
+
         return;
-    }
-
-    const auctionData = {
-        cropName,
-        farmerName,
-        category,
-        quantity,
-        basePrice,
-        minimumIncrement,
-        startTime: new Date(startTime).toISOString(),
-        endTime: new Date(endTime).toISOString(),
-        latitude: document.getElementById("latitude").value,
-        longitude: document.getElementById("longitude").value
-    };
-
-    const url = editingAuctionId ? `/api/auctions/${editingAuctionId}` : "/api/auctions";
-    const method = editingAuctionId ? "PATCH" : "POST";
-
-    const submitButton = document.getElementById("auctionSubmitButton");
-    const originalSubmitText = submitButton?.textContent || "Save Auction";
-    if (submitButton) {
-        submitButton.disabled = true;
-        submitButton.textContent = editingAuctionId ? "Saving Changes..." : "Creating Auction...";
     }
 
     try {
+        /*
+         * The database-backed API requires cropId.
+         * The existing UI uses cropName, so resolve the
+         * crop name to its database ID here.
+         */
+        const cropsResponse = await fetch("/api/crops");
+
+        if (!cropsResponse.ok) {
+            throw new Error("Unable to load crop information.");
+        }
+
+        const crops = await cropsResponse.json();
+
+        const selectedCrop = crops.find(
+            crop =>
+                String(crop.name || "")
+                    .trim()
+                    .toLowerCase() === cropName.toLowerCase()
+        );
+
+        if (!selectedCrop) {
+            throw new Error(
+                `Crop "${cropName}" was not found in the database.`
+            );
+        }
+
+        /*
+         * Support the API's crop ID naming.
+         * GET /api/crops returns the database crop identifier.
+         */
+        const cropId = Number(
+            selectedCrop.id ?? selectedCrop.cropId
+        );
+
+        if (!Number.isInteger(cropId) || cropId <= 0) {
+            throw new Error("Invalid crop ID.");
+        }
+
+        /*
+         * Phase 12 API contract:
+         *
+         * - cropId is required
+         * - title is required
+         * - farmerId is NOT sent
+         * - farmerName is NOT trusted by the backend
+         *
+         * The backend derives farmerId from the authenticated
+         * user's JWT.
+         *
+         * We use the existing crop name as the auction title
+         * so the current UI does not need to change.
+         */
+        const auctionData = {
+            cropId: cropId,
+            title: cropName,
+            category: category,
+            quantity: quantity,
+            basePrice: basePrice,
+            currentBid: basePrice,
+            minimumIncrement: minimumIncrement,
+            startTime: new Date(startTime).toISOString(),
+            endTime: new Date(endTime).toISOString(),
+            latitude: latitude,
+            longitude: longitude
+        };
+
+        const url = editingAuctionId
+            ? `/api/auctions/${editingAuctionId}`
+            : "/api/auctions";
+
+        const method = editingAuctionId
+            ? "PATCH"
+            : "POST";
+
+        const submitButton =
+            document.getElementById("auctionSubmitButton");
+
+        const originalSubmitText =
+            submitButton?.textContent || "Save Auction";
+
+        if (submitButton) {
+            submitButton.disabled = true;
+
+            submitButton.textContent =
+                editingAuctionId
+                    ? "Saving Changes..."
+                    : "Creating Auction...";
+        }
+
         const response = await fetch(url, {
             method,
-            headers: { "Content-Type": "application/json" },
+            headers: {
+                ...getAuthHeaders(),
+                "Content-Type": "application/json"
+            },
             body: JSON.stringify(auctionData)
         });
 
         const result = await response.json();
-        if (!response.ok) throw new Error(result.message || "Unable to save auction.");
 
-        bootstrap.Modal.getInstance(document.getElementById("createAuctionModal"))?.hide();
-        localStorage.removeItem(STORAGE_KEYS.AUCTION_DRAFT);
-        showAuctionAlert(result.message || "Auction saved successfully.", "success");
+        if (!response.ok) {
+            throw new Error(
+                result.message ||
+                "Unable to save auction."
+            );
+        }
+
+        bootstrap.Modal
+            .getInstance(
+                document.getElementById("createAuctionModal")
+            )
+            ?.hide();
+
+        /*
+         * Preserve the existing Local Storage draft functionality.
+         */
+        localStorage.removeItem(
+            STORAGE_KEYS.AUCTION_DRAFT
+        );
+
+        showAuctionAlert(
+            result.message ||
+            "Auction saved successfully.",
+            "success"
+        );
+
         editingAuctionId = null;
+
         await loadAuctions();
-    } catch (error) {
-        showAuctionAlert(error.message, "danger");
-    } finally {
+
         if (submitButton) {
             submitButton.disabled = false;
             submitButton.textContent = originalSubmitText;
+        }
+
+    } catch (error) {
+
+        showAuctionAlert(
+            error.message,
+            "danger"
+        );
+
+        const submitButton =
+            document.getElementById("auctionSubmitButton");
+
+        if (submitButton) {
+            submitButton.disabled = false;
+            submitButton.textContent =
+                editingAuctionId
+                    ? "Save Changes"
+                    : "Create Auction";
         }
     }
 }
@@ -948,7 +1090,10 @@ async function deleteAuction(auctionId) {
     if (!confirm(`Are you sure you want to delete the ${auction.cropName || "selected"} auction?`)) return;
 
     try {
-        const response = await fetch(`/api/auctions/${auctionId}`, { method: "DELETE" });
+        const response = await fetch(`/api/auctions/${auctionId}`, {
+            method: "DELETE",
+            headers: getAuthHeaders()
+        });
         const result = await response.json();
         if (!response.ok) throw new Error(result.message || "Unable to delete auction.");
 

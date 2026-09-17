@@ -1,7 +1,8 @@
 let farmerAuctions = [];
 let farmerBids = [];
 let farmerNotifications = [];
-const FARMER_NAME = "Rajesh Patel";
+let FARMER_NAME = "Farmer";
+let FARMER_ID = null;
 
 const farmerDashboard = document;
 
@@ -12,10 +13,24 @@ async function initializeFarmerDashboard() {
     applyTheme();
 
     try {
+        const currentUser = await getCurrentUser();
+        if (String(currentUser.role || "").toLowerCase() !== "farmer") {
+            throw new Error("Farmer access is required for this dashboard.");
+        }
+
+        FARMER_NAME = currentUser.name || "Farmer";
         const data = await loadDashboardData();
+        const farmerProfile = data.farmers.find(farmer => Number(farmer.userId) === Number(currentUser.user_id));
+        FARMER_ID = farmerProfile ? Number(farmerProfile.id) : null;
+
+        const farmerName = FARMER_NAME.toLowerCase();
         farmerAuctions = data.auctions.filter(auction =>
-            String(auction.farmerName || "").toLowerCase() === FARMER_NAME.toLowerCase() || Number(auction.farmerId) === 1
+            (FARMER_ID !== null && Number(auction.farmerId) === FARMER_ID) ||
+            String(auction.farmerName || "").toLowerCase() === farmerName
         );
+
+        const nameElement = document.getElementById("farmerNameDisplay");
+        if (nameElement) nameElement.textContent = FARMER_NAME;
         farmerBids = data.bids.filter(bid =>
             farmerAuctions.some(auction => Number(auction.id) === Number(bid.auctionId))
         );

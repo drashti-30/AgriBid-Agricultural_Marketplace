@@ -98,7 +98,7 @@ async function updateFarmerVerification(id, verified) {
     try {
         const response = await fetch(`/api/farmers/${id}/verification`, {
             method: "PATCH",
-            headers: { "Content-Type": "application/json" },
+            headers: getAuthHeaders({ "Content-Type": "application/json" }),
             body: JSON.stringify({ verified })
         });
         const result = await response.json();
