@@ -61,6 +61,11 @@
             <div class="table-responsive"><table class="table dashboard-table mb-0"><thead><tr><th>Farmer</th><th>Location</th><th>Phone</th><th>Status</th><th>Action</th></tr></thead><tbody id="farmerVerificationTable"></tbody></table></div>
         </section>
 
+        <section class="bg-white rounded-2xl border border-slate-200 shadow-sm mb-6">
+            <div class="px-6 py-5 border-b border-slate-200"><h3 class="text-lg font-bold">Buyer Verification</h3><p class="text-sm text-slate-500 mt-1">Review buyer account verification status.</p></div>
+            <div class="table-responsive"><table class="table dashboard-table mb-0"><thead><tr><th>Buyer</th><th>Business</th><th>Email</th><th>Phone</th><th>Status</th><th>Action</th></tr></thead><tbody id="buyerVerificationTable"></tbody></table></div>
+        </section>
+
         <section id="adminNotifications" class="bg-white rounded-2xl border border-slate-200 shadow-sm">
             <div class="px-6 py-5 border-b border-slate-200 flex items-center justify-between gap-3"><div><h3 class="text-lg font-bold">Notifications</h3><p class="text-sm text-slate-500 mt-1">System-level marketplace updates.</p></div><div class="flex items-center gap-2"><button id="markAllNotificationsRead" class="text-xs font-semibold text-green-600">Mark all read</button><span id="notificationBadge" class="rounded-full bg-red-100 px-3 py-1 text-xs font-semibold text-red-700">0 new</span></div></div>
             <div id="notificationList"></div>

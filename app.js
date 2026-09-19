@@ -265,12 +265,23 @@ const server = http.createServer(async (req, res) => {
                         VALUES (?, ?, ?, ?)
                     `, [userId, `${name}'s Farm`, address, address]);
                 } else {
-                    await connection.execute(`
-                        INSERT INTO buyers
-                            (user_id, business_name, address)
-                        VALUES (?, ?, ?)
-                    `, [userId, name, address]);
-                }
+                        await connection.execute(`
+                            INSERT INTO buyers
+                                (user_id, business_name, address)
+                            VALUES (?, ?, ?)
+                        `, [userId, name, address]);
+
+                        /*Every newly registered buyer starts with a pending verification request.
+                          The Admin can later approve it.*/
+                        await connection.execute(`
+                            INSERT INTO verifications
+                                (user_id, document_type, status)
+                            VALUES (?, ?, 'pending')
+                        `, [
+                            userId,
+                            "buyer-registration"
+                        ]);
+                    }
 
                 await connection.commit();
 
@@ -362,6 +373,122 @@ const server = http.createServer(async (req, res) => {
             sendJSON(res, 200, { user });
             return;
         }
+
+        if (pathname === "/api/admin/buyers" && req.method === "GET") {
+            const user = await authenticate(req, res);
+            if (!user) return;
+            req.user = user;
+
+            if (!authorize("admin")(req, res)) return;
+
+            const [rows] = await db.execute(`
+                SELECT b.buyer_id AS id, b.user_id AS userId, u.name, u.email, u.phone,
+                    b.business_name AS businessName, b.business_type AS businessType, b.location,
+                    COALESCE(v.status, 'pending') AS verificationStatus,
+                    CASE WHEN COALESCE(v.status, 'pending') = 'approved' THEN TRUE ELSE FALSE END AS verified
+                FROM buyers b
+                INNER JOIN users u ON b.user_id = u.user_id
+                LEFT JOIN verifications v ON v.verification_id = (
+                    SELECT MAX(v2.verification_id)
+                    FROM verifications v2
+                    WHERE v2.user_id = b.user_id
+                )
+                ORDER BY b.buyer_id
+            `);
+
+            sendJSON(res, 200, rows);
+            return;
+        }
+
+        if (
+                pathname.startsWith("/api/admin/buyers/") &&
+                pathname.endsWith("/verification") &&
+                req.method === "PATCH"
+            ) {
+                const user = await authenticate(req, res);
+                if (!user) return;
+                req.user = user;
+
+                if (!authorize("admin")(req, res)) return;
+
+                const parts = pathname.split("/").filter(Boolean);
+
+                // /api/admin/buyers/:buyerId/verification
+                const buyerId = Number(parts[3]);
+
+                if (!Number.isInteger(buyerId) || buyerId <= 0) {
+                    sendJSON(res, 400, { message: "Invalid buyer ID." });
+                    return;
+                }
+
+                const body = await getRequestBody(req);
+                const verified = body.verified === true;
+
+                /*
+                * Find the buyer and its linked user.
+                */
+                const [buyerRows] = await db.execute(`
+                    SELECT buyer_id, user_id
+                    FROM buyers
+                    WHERE buyer_id = ?
+                    LIMIT 1
+                `, [buyerId]);
+
+                if (!buyerRows.length) {
+                    sendJSON(res, 404, { message: "Buyer not found." });
+                    return;
+                }
+
+                const buyer = buyerRows[0];
+
+                /*
+                * Check whether a verification record already exists.
+                */
+                const [verificationRows] = await db.execute(`
+                    SELECT verification_id, status
+                    FROM verifications
+                    WHERE user_id = ?
+                    ORDER BY verification_id DESC
+                    LIMIT 1
+                `, [buyer.user_id]);
+
+                const newStatus = verified ? "approved" : "pending";
+
+                if (verificationRows.length) {
+                    /*
+                    * Existing verification record:
+                    * update its review status.
+                    */
+                    await db.execute(`
+                        UPDATE verifications
+                        SET status = ?, reviewed_at = NOW(), reviewed_by = ?, rejection_reason = NULL
+                        WHERE verification_id = ?
+                    `, [newStatus, req.user.id, verificationRows[0].verification_id]);
+
+                } else {
+                    /*
+                    * Existing buyer had no verification record.
+                    * Create one now.
+                    */
+                    await db.execute(`
+                        INSERT INTO verifications (
+                            user_id, document_type, status, submitted_at, reviewed_at, reviewed_by
+                        )
+                        VALUES (?, ?, ?, NOW(), NOW(), ?)
+                    `, [buyer.user_id, "buyer-registration", newStatus, req.user.id]);
+                }
+
+                sendJSON(res, 200, {
+                    message: verified
+                        ? "Buyer verified successfully."
+                        : "Buyer marked as unverified.",
+                    buyerId,
+                    verified,
+                    verificationStatus: newStatus
+                });
+
+                return;
+            }
 
         if (pathname === "/api/crops" && req.method === "GET") {
             const [rows] = await db.execute(`

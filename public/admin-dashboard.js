@@ -1,6 +1,7 @@
 let adminAuctions = [];
 let adminBids = [];
 let adminFarmers = [];
+let adminBuyers = [];
 let adminNotifications = [];
 
 document.addEventListener("DOMContentLoaded", initializeAdminDashboard);
@@ -14,11 +15,22 @@ async function initializeAdminDashboard() {
         adminAuctions = data.auctions;
         adminBids = data.bids;
         adminFarmers = data.farmers;
+
+        const buyerResponse = await fetch("/api/admin/buyers", {
+            headers: getAuthHeaders()
+        });
+        if (!buyerResponse.ok) {
+            const error = await buyerResponse.json().catch(() => ({}));
+            throw new Error(error.message || "Unable to load buyer verification data.");
+        }
+        adminBuyers = await buyerResponse.json();
+
         renderAdminStatistics();
         renderAdminAuctions();
         renderAdminActivity();
         renderAdminInsights();
         renderFarmerVerification();
+        renderBuyerVerification();
         await refreshAdminNotifications();
     } catch (error) {
         console.error(error);
@@ -28,8 +40,12 @@ async function initializeAdminDashboard() {
 
 function setupAdminEvents() {
     document.getElementById("mobileMenuButton")?.addEventListener("click", () => document.getElementById("mobileMenu")?.classList.toggle("hidden"));
-    document.getElementById("logoutButton")?.addEventListener("click", () => {
+    document
+    .getElementById("logoutButton")?.addEventListener("click", () => {
         localStorage.removeItem("agribidUser");
+        localStorage.removeItem("agribidToken");
+        sessionStorage.removeItem("agribidUser");
+        sessionStorage.removeItem("agribidToken");
         window.location.href = "/login.html";
     });
     document.getElementById("markAllNotificationsRead")?.addEventListener("click", markAllAdminNotificationsRead);
@@ -114,6 +130,61 @@ async function updateFarmerVerification(id, verified) {
         showDashboardMessage(result.message, "success");
     } catch (error) {
         showDashboardMessage(error.message, "danger");
+    }
+}
+
+function renderBuyerVerification() {
+    const container = document.getElementById("buyerVerificationTable");
+    if (!container) return;
+    if (!adminBuyers.length) {
+        container.innerHTML = `<tr><td colspan="6" class="text-center text-muted py-4">No buyers found.</td></tr>`;
+        return;
+    }
+    container.innerHTML = adminBuyers.map(buyer => {
+        const verified = buyer.verificationStatus === "approved";
+        return `
+            <tr>
+                <td><strong>${escapeHTML(buyer.name)}</strong></td>
+                <td>${escapeHTML(buyer.businessName || "Not provided")}</td>
+                <td>${escapeHTML(buyer.email || "Not provided")}</td>
+                <td>${escapeHTML(buyer.phone || "Not provided")}</td>
+                <td><span class="badge ${verified ? "text-bg-success" : "text-bg-warning"}">${verified ? "Verified" : "Pending"}</span></td>
+                <td><button class="btn btn-sm ${verified ? "btn-outline-secondary" : "btn-success"}" data-buyer-verify-id="${buyer.id}" data-next-value="${!verified}">${verified ? "Mark Unverified" : "Verify Buyer"}</button></td>
+            </tr>`;
+    }).join("");
+
+    container.querySelectorAll("[data-buyer-verify-id]").forEach(button => {
+        button.addEventListener("click", () => {
+            const buyerId = button.dataset.buyerVerifyId;
+            const verified = button.dataset.nextValue === "true";
+            updateBuyerVerification(buyerId, verified);
+        });
+    });
+}
+
+async function updateBuyerVerification(buyerId, verified) {
+    try {
+        const response = await fetch(`/api/admin/buyers/${buyerId}/verification`, {
+            method: "PATCH",
+            headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+            body: JSON.stringify({ verified })
+        });
+        const result = await response.json();
+        if (!response.ok) {
+            throw new Error(result.message || "Unable to update buyer verification.");
+        }
+        //Update the frontend state.
+        const buyer = adminBuyers.find(item => Number(item.id) === Number(buyerId));
+        if (buyer) {
+            buyer.verified = verified;
+            buyer.verificationStatus = verified ? "approved" : "pending";
+        }
+        renderBuyerVerification();
+        showDashboardMessage(result.message, "success");
+        await refreshAdminNotifications();
+    } catch (error) {
+        console.error("Buyer verification error:", error);
+        showDashboardMessage(error.message || "Unable to update buyer verification.", "danger");
     }
 }
 
