@@ -167,6 +167,35 @@ async function resolveCropId(body, fallbackCropId = null) {
     return rows.length ? Number(rows[0].crop_id) : null;
 }
 
+// Share the marketplace response shape with the authenticated farmer workspace.
+// The workspace's farmer ID is always resolved on the server from the JWT.
+async function getAuctionRows(whereClause = "", parameters = []) {
+    const [rows] = await db.execute(`
+        SELECT a.auction_id AS id, a.crop_id AS cropId, a.farmer_id AS farmerId,
+            a.title, a.description, a.quantity, a.unit, a.quality,
+            a.starting_price AS basePrice, a.current_bid AS currentBid,
+            a.minimum_increment AS minimumIncrement,
+            CASE a.status
+                WHEN 'active' THEN 'Active'
+                WHEN 'scheduled' THEN 'Scheduled'
+                WHEN 'closed' THEN 'Closed'
+                WHEN 'cancelled' THEN 'Cancelled'
+                ELSE a.status
+            END AS status,
+            a.start_time AS startTime, a.end_time AS endTime,
+            a.latitude, a.longitude, a.location,
+            c.name AS cropName, c.category AS category, u.name AS farmerName
+        FROM auctions a
+        INNER JOIN crops c ON a.crop_id = c.crop_id
+        INNER JOIN farmers f ON a.farmer_id = f.farmer_id
+        INNER JOIN users u ON f.user_id = u.user_id
+        ${whereClause}
+        ORDER BY a.auction_id DESC
+    `, parameters);
+
+    return rows;
+}
+
 const server = http.createServer(async (req, res) => {
     const requestURL = new URL(req.url, `http://${req.headers.host || "localhost"}`);
     const pathname = requestURL.pathname;
@@ -528,40 +557,35 @@ const server = http.createServer(async (req, res) => {
         }
 
         if (pathname === "/api/auctions" && req.method === "GET") {
-            const [rows] = await db.execute(`
-                SELECT
-                    a.auction_id AS id,
-                    a.crop_id AS cropId,
-                    a.farmer_id AS farmerId,
-                    a.title,
-                    a.description,
-                    a.quantity,
-                    a.unit,
-                    a.quality,
-                    a.starting_price AS basePrice,
-                    a.current_bid AS currentBid,
-                    a.minimum_increment AS minimumIncrement,
-                    CASE a.status
-                        WHEN 'active' THEN 'Active'
-                        WHEN 'scheduled' THEN 'Scheduled'
-                        WHEN 'closed' THEN 'Closed'
-                        WHEN 'cancelled' THEN 'Cancelled'
-                        ELSE a.status
-                    END AS status,
-                    a.start_time AS startTime,
-                    a.end_time AS endTime,
-                    a.latitude,
-                    a.longitude,
-                    a.location,
-                    c.name AS cropName,
-                    c.category AS category,
-                    u.name AS farmerName
-                FROM auctions a
-                INNER JOIN crops c ON a.crop_id = c.crop_id
-                INNER JOIN farmers f ON a.farmer_id = f.farmer_id
-                INNER JOIN users u ON f.user_id = u.user_id
-                ORDER BY a.auction_id DESC
-            `);
+            const rows = await getAuctionRows();
+
+            sendJSON(res, 200, rows);
+            return;
+        }
+
+        if (pathname === "/api/farmer/auctions" && req.method === "GET") {
+            const user = await authenticate(req, res);
+            if (!user) return;
+            req.user = user;
+
+            if (!authorize("farmer")(req, res)) return;
+
+            const [farmerRows] = await db.execute(`
+                SELECT farmer_id
+                FROM farmers
+                WHERE user_id = ?
+                LIMIT 1
+            `, [req.user.user_id]);
+
+            if (!farmerRows.length) {
+                sendJSON(res, 403, { message: "Farmer profile not found." });
+                return;
+            }
+
+            const rows = await getAuctionRows(
+                "WHERE a.farmer_id = ?",
+                [farmerRows[0].farmer_id]
+            );
 
             sendJSON(res, 200, rows);
             return;
