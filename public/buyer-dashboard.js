@@ -1,30 +1,197 @@
 let buyerAuctions = [];
 let buyerBids = [];
 let buyerNotifications = [];
-let selectedBuyerName = "Fresh Foods Pvt Ltd";
 
-// Authentication will be connected later. This selector uses a real buyer name from the existing bid data for the current demo.
+let currentBuyerUser = null;
+let selectedBuyerName = "";
+
+// Initialize the real authenticated Buyer Dashboard.
 document.addEventListener("DOMContentLoaded", initializeBuyerDashboard);
 
 async function initializeBuyerDashboard() {
-    setupBuyerEvents();
-    applyTheme();
-
     try {
-        const data = await loadDashboardData();
-        buyerAuctions = data.auctions;
-        populateBuyerProfiles(data.bids);
-        buyerBids = data.bids.filter(bid => bid.buyerName.toLowerCase() === selectedBuyerName.toLowerCase());
-        updateBuyerStatistics();
-        renderBuyerBids();
-        renderRecommendedAuctions();
-        renderBuyerInsights();
-        renderBuyerWishlist();
-        renderBuyerRecentlyViewed();
-        await refreshBuyerNotifications();
+        // Register the existing dashboard controls first.
+        setupBuyerEvents();
+
+        // The Phase 11 login flow stores the JWT in sessionStorage.
+        const token = sessionStorage.getItem("agribidToken");
+
+        // No login: keep the dashboard stable and show a guest state.
+        if (!token) {
+            showAuthenticationRequired();
+            return;
+        }
+
+        // Verify the JWT and obtain the authoritative user from the backend.
+        const user = await getCurrentUser();
+
+        if (!user) {
+            showAuthenticationRequired();
+            return;
+        }
+
+        // This page is for Buyer accounts only.
+        if (String(user.role || "").toLowerCase() !== "buyer") {
+            showDashboardMessage(
+                "Buyer access is required for this dashboard.",
+                "danger"
+            );
+            return;
+        }
+
+        currentBuyerUser = user;
+        selectedBuyerName = user.name || "Buyer";
+
+        console.log("Logged-in buyer:", user);
+
+        // Use the actual authenticated user's identity in the UI.
+        updateBuyerIdentity(user);
+
+        // Load the existing buyer dashboard data.
+        await loadBuyerDashboardData(user);
+
     } catch (error) {
-        console.error(error);
-        showDashboardMessage(error.message, "danger");
+        console.error("Buyer dashboard error:", error);
+
+        // Invalid/expired authentication should not leave a broken JS state.
+        if (
+            error.message === "Authentication required." ||
+            error.message === "Invalid or expired token." ||
+            error.message === "Invalid or expired token"
+        ) {
+            showAuthenticationRequired();
+            return;
+        }
+
+        showDashboardMessage(
+            error.message || "Unable to load Buyer Dashboard.",
+            "danger"
+        );
+    }
+}
+
+async function loadBuyerDashboardData(user) {
+    const [auctionResponse, bidResponse] = await Promise.all([
+        fetch("/api/auctions"),
+        fetch("/api/bids")
+    ]);
+
+    if (!auctionResponse.ok) {
+        throw new Error("Unable to load auctions.");
+    }
+
+    if (!bidResponse.ok) {
+        throw new Error("Unable to load bids.");
+    }
+
+    const auctions = await auctionResponse.json();
+    const bids = await bidResponse.json();
+
+    buyerAuctions = Array.isArray(auctions) ? auctions : [];
+
+    /*
+     * Preserve the existing Phase 1-4/10 bid display contract.
+     * Historical bids contain buyerName, while the current
+     * authenticated identity comes from /api/auth/me.
+     */
+    buyerBids = Array.isArray(bids)
+        ? bids.filter(
+            bid =>
+                String(bid.buyerName || "").trim().toLowerCase() ===
+                String(selectedBuyerName || "").trim().toLowerCase()
+        )
+        : [];
+
+    updateBuyerStatistics();
+    renderBuyerBids();
+    renderBuyerInsights();
+    renderBuyerWishlist();
+    renderBuyerRecentlyViewed();
+    renderRecommendedAuctions();
+
+    // Notifications are protected in Phase 12 and receive the JWT
+    // through getAuthHeaders().
+    await refreshBuyerNotifications();
+}
+
+function showAuthenticationRequired() {
+    console.log("No authenticated buyer found.");
+
+    currentBuyerUser = null;
+    selectedBuyerName = "";
+    buyerAuctions = [];
+    buyerBids = [];
+    buyerNotifications = [];
+
+    const accountName =
+        document.getElementById("buyerProfileName");
+
+    const accountEmail =
+        document.getElementById("buyerProfileEmail");
+
+    const accountRole =
+        document.getElementById("buyerProfileRole");
+
+    const welcomeName =
+        document.getElementById("buyerWelcomeName");
+
+    if (welcomeName) {
+        welcomeName.textContent = "Buyer";
+    }
+
+    if (accountName) {
+        accountName.textContent = "Guest Buyer";
+    }
+
+    if (accountEmail) {
+        accountEmail.textContent =
+            "Please login to access your buyer account.";
+    }
+
+    if (accountRole) {
+        accountRole.textContent = "BUYER ACCOUNT";
+    }
+
+    // Reset authenticated-only statistics without throwing an error.
+    updateBuyerStatistics();
+
+    showDashboardMessage(
+        "Authentication required. Please login to view your buyer data.",
+        "warning"
+    );
+}
+
+function updateBuyerIdentity(user) {
+    const name = user?.name || "Buyer";
+    const email = user?.email || "";
+    const role = user?.role || "buyer";
+
+    const welcomeName =
+        document.getElementById("buyerWelcomeName");
+
+    if (welcomeName) {
+        welcomeName.textContent = name;
+    }
+
+    const profileName =
+        document.getElementById("buyerProfileName");
+
+    if (profileName) {
+        profileName.textContent = name;
+    }
+
+    const profileEmail =
+        document.getElementById("buyerProfileEmail");
+
+    if (profileEmail) {
+        profileEmail.textContent = email;
+    }
+
+    const profileRole =
+        document.getElementById("buyerProfileRole");
+
+    if (profileRole) {
+        profileRole.textContent = `${role.toUpperCase()} ACCOUNT`;
     }
 }
 
@@ -32,23 +199,17 @@ function setupBuyerEvents() {
     document.getElementById("mobileMenuButton")?.addEventListener("click", () => document.getElementById("mobileMenu")?.classList.toggle("hidden"));
     document.getElementById("logoutButton")?.addEventListener("click", () => {
         localStorage.removeItem("agribidUser");
+        localStorage.removeItem("agribidToken");
+
+        sessionStorage.removeItem("agribidUser");
+        sessionStorage.removeItem("agribidToken");
+
         window.location.href = "/login.html";
     });
     document.getElementById("viewWishlistButton")?.addEventListener("click", () => window.location.href = "/auctions.html?wishlist=1");
     document.getElementById("viewNotificationsButton")?.addEventListener("click", () => document.getElementById("buyerNotifications")?.scrollIntoView({ behavior: "smooth" }));
     document.getElementById("markAllNotificationsRead")?.addEventListener("click", markAllBuyerNotificationsRead);
     document.querySelector("[data-theme-toggle]")?.addEventListener("click", toggleTheme);
-    document.getElementById("buyerProfile")?.addEventListener("change", changeBuyerProfile);
-}
-
-function populateBuyerProfiles(bids) {
-    const select = document.getElementById("buyerProfile");
-    if (!select) return;
-
-    const buyers = [...new Set(bids.map(bid => bid.buyerName).filter(Boolean))].sort();
-    select.innerHTML = buyers.map(name => `<option value="${escapeHTML(name)}">${escapeHTML(name)}</option>`).join("");
-    select.value = buyers.includes(selectedBuyerName) ? selectedBuyerName : buyers[0] || selectedBuyerName;
-    selectedBuyerName = select.value;
 }
 
 async function changeBuyerProfile(event) {
@@ -131,10 +292,20 @@ function renderRecommendedAuctions() {
 async function refreshBuyerNotifications() {
     const wishlist = JSON.stringify(getWishlist());
     const params = new URLSearchParams({ role: "Buyer", userName: selectedBuyerName, wishlist });
-    const response = await fetch(`/api/notifications?${params}`);
+
+    const response = await fetch(`/api/notifications?${params}`, {
+        method: "GET",
+        headers: getAuthHeaders()
+    });
+
     const result = await response.json();
-    if (!response.ok) throw new Error(result.message || "Unable to load notifications.");
-    buyerNotifications = result;
+
+    if (!response.ok) {
+        throw new Error(result.message || result.error || "Unable to load notifications.");
+    }
+
+    buyerNotifications = Array.isArray(result) ? result : [];
+
     renderNotificationCenter("notificationList", "notificationBadge", buyerNotifications);
 }
 
@@ -143,6 +314,11 @@ function markAllBuyerNotificationsRead() {
     renderNotificationCenter("notificationList", "notificationBadge", buyerNotifications);
 }
 
+function renderBuyerAccount(user) {
+    // Keep compatibility with any existing calls while using
+    // the real authenticated account renderer.
+    updateBuyerIdentity(user);
+}
 
 function renderBuyerInsights() {
     const container = document.getElementById("buyerInsights");
