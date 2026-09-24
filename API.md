@@ -45,7 +45,6 @@ Example body:
   "category": "Grains",
   "quantity": 500,
   "basePrice": 20,
-  "minimumIncrement": 1,
   "startTime": "2026-09-12T10:00:00.000Z",
   "endTime": "2026-09-15T16:30:00.000Z",
   "latitude": "22.3072",

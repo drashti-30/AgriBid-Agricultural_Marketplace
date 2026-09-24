@@ -11,7 +11,7 @@ async function authenticate(req, res) {
         return null;
     }
 
-    const parts = authorization.split(" ");
+    const parts = authorization.split(" "); //cause the header is expected to be in the format "Bearer <token>"
 
     if (parts.length !== 2 || parts[0] !== "Bearer" || !parts[1]) {
         res.writeHead(401, { "Content-Type": "application/json" });

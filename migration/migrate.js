@@ -55,8 +55,6 @@ function createLegacyEmail(role, idOrName) {
 }
 
 function createLegacyPasswordHash() {
-  // Phase 4 did not have real server-side passwords.
-  // Phase 11 will replace these placeholder values with real password hashes.
   return "LEGACY_ACCOUNT_NO_PASSWORD";
 }
 

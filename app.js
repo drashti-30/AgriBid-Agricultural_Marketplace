@@ -75,7 +75,9 @@ function validateAuctionInput(body) {
     const currentBid = body.currentBid === undefined || body.currentBid === ""
         ? basePrice
         : toNumber(body.currentBid);
-    const minimumIncrement = toNumber(body.minimumIncrement);
+    const minimumIncrement = body.minimumIncrement === undefined || body.minimumIncrement === ""
+        ? 0
+        : toNumber(body.minimumIncrement);
     const startTime = toMySQLDateTime(body.startTime);
     const endTime = toMySQLDateTime(body.endTime);
 
@@ -88,8 +90,8 @@ function validateAuctionInput(body) {
         return { error: "Current bid must be greater than or equal to the base price." };
     }
 
-    if (minimumIncrement === null || minimumIncrement <= 0) {
-        return { error: "Minimum increment must be greater than 0." };
+    if (minimumIncrement === null || minimumIncrement < 0) {
+        return { error: "Minimum increment cannot be negative." };
     }
 
     if (!startTime || !endTime) return { error: "Valid startTime and endTime are required." };
@@ -492,7 +494,7 @@ const server = http.createServer(async (req, res) => {
                         UPDATE verifications
                         SET status = ?, reviewed_at = NOW(), reviewed_by = ?, rejection_reason = NULL
                         WHERE verification_id = ?
-                    `, [newStatus, req.user.id, verificationRows[0].verification_id]);
+                    `, [newStatus, req.user.user_id, verificationRows[0].verification_id]);
 
                 } else {
                     /*
@@ -504,7 +506,7 @@ const server = http.createServer(async (req, res) => {
                             user_id, document_type, status, submitted_at, reviewed_at, reviewed_by
                         )
                         VALUES (?, ?, ?, NOW(), NOW(), ?)
-                    `, [buyer.user_id, "buyer-registration", newStatus, req.user.id]);
+                    `, [buyer.user_id, "buyer-registration", newStatus, req.user.user_id]);
                 }
 
                 sendJSON(res, 200, {
@@ -1001,7 +1003,6 @@ const server = http.createServer(async (req, res) => {
                     SELECT
                         auction_id,
                         current_bid,
-                        minimum_increment,
                         status,
                         start_time,
                         end_time
@@ -1022,13 +1023,25 @@ const server = http.createServer(async (req, res) => {
                 const startTime = new Date(auction.start_time);
                 const endTime = new Date(auction.end_time);
 
+                // Auction status is time-driven. Promote a due scheduled auction
+                // while it is locked so the displayed marketplace state and the
+                // server-side bidding decision cannot drift apart.
+                if (auction.status === "scheduled" && now >= startTime && now < endTime) {
+                    await connection.execute(`
+                        UPDATE auctions
+                        SET status = 'active'
+                        WHERE auction_id = ?
+                    `, [auctionId]);
+                    auction.status = "active";
+                }
+
                 if (auction.status !== "active" || now < startTime || now >= endTime) {
                     await connection.rollback();
                     sendJSON(res, 400, { message: "Bidding is not active." });
                     return;
                 }
 
-                const minimumBid = Number(auction.current_bid) + Number(auction.minimum_increment);
+                const minimumBid = Number(auction.current_bid);
 
                 if (amount < minimumBid) {
                     await connection.rollback();
@@ -1232,7 +1245,6 @@ async function startServer() {
 
         server.listen(PORT, () => {
             console.log(`AgriBid server running at http://localhost:${PORT}`);
-            console.log("Phase 9: APIs are using MySQL.");
         });
     } catch (error) {
         console.error("Unable to connect to MySQL.");

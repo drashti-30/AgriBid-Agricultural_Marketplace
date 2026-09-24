@@ -28,8 +28,6 @@ function setupEventListeners() {
     document.getElementById("categoryFilter")?.addEventListener("change", renderFilteredAuctions);
     document.getElementById("statusFilter")?.addEventListener("change", renderFilteredAuctions);
     document.getElementById("sortAuctions")?.addEventListener("change", renderFilteredAuctions);
-    document.getElementById("minPriceFilter")?.addEventListener("input", renderFilteredAuctions);
-    document.getElementById("maxPriceFilter")?.addEventListener("input", renderFilteredAuctions);
     document.getElementById("clearSearch")?.addEventListener("click", clearFilters);
     document.getElementById("modalBidButton")?.addEventListener("click", openBidModal);
     document.getElementById("submitBidButton")?.addEventListener("click", submitBid);
@@ -386,9 +384,6 @@ function getFilteredAuctions() {
     const searchTerm = document.getElementById("auctionSearch")?.value.trim().toLowerCase() || "";
     const category = document.getElementById("categoryFilter")?.value || "";
     const status = document.getElementById("statusFilter")?.value || "";
-    const minPrice = Number(document.getElementById("minPriceFilter")?.value || 0);
-    const maxPriceValue = document.getElementById("maxPriceFilter")?.value;
-    const maxPrice = maxPriceValue ? Number(maxPriceValue) : Infinity;
     const wishlistOnly = document.getElementById("wishlistFilter")?.checked || false;
     const sort = document.getElementById("sortAuctions")?.value || "endingSoon";
     const wishlist = getWishlist();
@@ -404,14 +399,12 @@ function getFilteredAuctions() {
             auction.location
         ].join(" ").toLowerCase();
 
-        const price = Number(auction.currentBid || auction.basePrice || 0);
         const matchesSearch = !searchTerm || searchableText.includes(searchTerm);
         const matchesCategory = !category || auction.category === category;
         const matchesStatus = !status || getAuctionStatus(auction) === status;
-        const matchesPrice = price >= minPrice && price <= maxPrice;
         const matchesWishlist = !wishlistOnly || wishlist.includes(Number(auction.id));
 
-        return matchesSearch && matchesCategory && matchesStatus && matchesPrice && matchesWishlist;
+        return matchesSearch && matchesCategory && matchesStatus && matchesWishlist;
     });
 
     filtered.sort((a, b) => {
@@ -433,8 +426,6 @@ function clearFilters() {
     document.getElementById("auctionSearch").value = "";
     document.getElementById("categoryFilter").value = "";
     document.getElementById("statusFilter").value = "";
-    document.getElementById("minPriceFilter").value = "";
-    document.getElementById("maxPriceFilter").value = "";
     document.getElementById("sortAuctions").value = "endingSoon";
     document.getElementById("wishlistFilter").checked = false;
     renderFilteredAuctions();
@@ -469,7 +460,6 @@ function renderAuctions(auctions) {
 function createAuctionCard(auction) {
     const status = getAuctionStatus(auction);
     const currentBid = getCurrentBid(auction);
-    const minimumBid = currentBid + Number(auction.minimumIncrement || 1);
     const wishlisted = isWishlisted(auction.id);
     const statusClass = getStatusClass(status);
     const verifiedBadge = auction.verified
@@ -525,10 +515,6 @@ function createAuctionCard(auction) {
                             <div>
                                 <small class="text-muted d-block">Current Bid</small>
                                 <span class="fs-4 fw-bold text-success">₹${formatNumber(currentBid)}</span>
-                            </div>
-                            <div class="text-end">
-                                <small class="text-muted d-block">Next Minimum</small>
-                                <strong>₹${formatNumber(minimumBid)}</strong>
                             </div>
                         </div>
 
@@ -590,7 +576,6 @@ function openComparisonModal() {
         ["Quantity", auction => `${auction.quantity || 0} ${auction.unit || "units"}`],
         ["Base Price", auction => formatCurrency(auction.basePrice)],
         ["Current Bid", auction => formatCurrency(getCurrentBid(auction))],
-        ["Next Minimum Bid", auction => formatCurrency(getCurrentBid(auction) + Number(auction.minimumIncrement || 1))],
         ["Status", auction => getAuctionStatus(auction)],
         ["Time", auction => formatCountdown(auction)],
         ["Location", auction => auction.location || "Not provided"]
@@ -658,8 +643,6 @@ function openAuctionModal(auctionId) {
 function renderAuctionDetailsModal(auction) {
     const status = getAuctionStatus(auction);
     const currentBid = getCurrentBid(auction);
-    const minimumIncrement = Number(auction.minimumIncrement || 1);
-    const minimumNextBid = currentBid + minimumIncrement;
 
     document.getElementById("auctionModalBody").innerHTML = `
         <div class="d-flex justify-content-between align-items-start gap-3 mb-3">
@@ -679,7 +662,6 @@ function renderAuctionDetailsModal(auction) {
             <div class="col-6"><small class="text-muted d-block">Quantity</small><strong>${escapeHTML(String(auction.quantity || "N/A"))} ${escapeHTML(auction.unit || "units")}</strong></div>
             <div class="col-6"><small class="text-muted d-block">Base Price</small><strong>₹${formatNumber(auction.basePrice || 0)}</strong></div>
             <div class="col-6"><small class="text-muted d-block">Current Bid</small><strong class="text-success">₹${formatNumber(currentBid)}</strong></div>
-            <div class="col-6"><small class="text-muted d-block">Minimum Increment</small><strong>₹${formatNumber(minimumIncrement)}</strong></div>
             <div class="col-12"><small class="text-muted d-block">Farmer Location</small><strong>${escapeHTML(auction.location || "Location not provided")}</strong></div>
         </div>
 
@@ -688,10 +670,6 @@ function renderAuctionDetailsModal(auction) {
                 <span>${status === "Active" ? "Auction ends in" : status === "Scheduled" ? "Auction starts in" : "Auction status"}</span>
                 <strong data-modal-countdown="${auction.id}">${formatCountdown(auction)}</strong>
             </div>
-        </div>
-
-        <div class="alert alert-info mb-0">
-            Minimum valid next bid: <strong>₹${formatNumber(minimumNextBid)}</strong>
         </div>
 
         <div class="mt-4">
@@ -747,16 +725,14 @@ function openBidModal() {
     if (!selectedAuction || getAuctionStatus(selectedAuction) !== "Active") return;
 
     const currentBid = getCurrentBid(selectedAuction);
-    const minimumBid = currentBid + Number(selectedAuction.minimumIncrement || 1);
     const bidAmount = document.getElementById("bidAmount");
 
     document.getElementById("bidAuctionName").textContent = selectedAuction.cropName || "Crop Auction";
     document.getElementById("bidCurrentAmount").textContent = `₹${formatNumber(currentBid)}`;
-    document.getElementById("bidMinimumAmount").textContent = `₹${formatNumber(minimumBid)}`;
     document.getElementById("buyerName").value = "";
-    bidAmount.value = minimumBid;
-    bidAmount.min = minimumBid;
-    document.getElementById("bidValidationMessage").textContent = `Minimum valid bid is ₹${formatNumber(minimumBid)}.`;
+    bidAmount.value = currentBid;
+    bidAmount.min = currentBid;
+    document.getElementById("bidValidationMessage").textContent = "Enter the current bid amount or a higher amount.";
 
     bootstrap.Modal.getOrCreateInstance(document.getElementById("bidModal")).show();
 }
@@ -766,7 +742,7 @@ async function submitBid() {
 
     const buyerName = document.getElementById("buyerName").value.trim();
     const amount = Number(document.getElementById("bidAmount").value);
-    const minimumBid = getCurrentBid(selectedAuction) + Number(selectedAuction.minimumIncrement || 1);
+    const currentBid = getCurrentBid(selectedAuction);
     const validationMessage = document.getElementById("bidValidationMessage");
 
     if (!buyerName) {
@@ -775,8 +751,8 @@ async function submitBid() {
         return;
     }
 
-    if (!Number.isFinite(amount) || amount < minimumBid) {
-        validationMessage.textContent = `Bid must be at least ₹${formatNumber(minimumBid)}.`;
+    if (!Number.isFinite(amount) || amount < currentBid) {
+        validationMessage.textContent = `Bid must be at least the current bid of ₹${formatNumber(currentBid)}.`;
         validationMessage.className = "form-text text-danger";
         return;
     }
@@ -837,7 +813,6 @@ function fillAuctionForm(auction) {
     document.getElementById("category").value = auction.category || "General";
     document.getElementById("quantity").value = auction.quantity || "";
     document.getElementById("basePrice").value = auction.basePrice || "";
-    document.getElementById("minimumIncrement").value = auction.minimumIncrement || 1;
     document.getElementById("startTime").value = toDateTimeLocal(auction.startTime);
     document.getElementById("endTime").value = toDateTimeLocal(auction.endTime);
     document.getElementById("latitude").value = auction.latitude || "";
@@ -866,9 +841,6 @@ async function saveAuction(event) {
     const category = document.getElementById("category").value;
     const quantity = Number(document.getElementById("quantity").value);
     const basePrice = Number(document.getElementById("basePrice").value);
-    const minimumIncrement = Number(
-        document.getElementById("minimumIncrement").value
-    );
 
     const startTime = document.getElementById("startTime").value;
     const endTime = document.getElementById("endTime").value;
@@ -888,12 +860,11 @@ async function saveAuction(event) {
         !farmerName ||
         !category ||
         quantity <= 0 ||
-        basePrice <= 0 ||
-        minimumIncrement <= 0
+        basePrice <= 0
     ) {
         if (validationMessage) {
             validationMessage.textContent =
-                "Enter a crop, farmer, category, positive quantity, positive base price and positive bid increment.";
+                "Enter a crop, farmer, category, positive quantity and positive base price.";
             validationMessage.classList.remove("d-none");
         }
 
@@ -984,7 +955,7 @@ async function saveAuction(event) {
             quantity: quantity,
             basePrice: basePrice,
             currentBid: basePrice,
-            minimumIncrement: minimumIncrement,
+            minimumIncrement: 0,
             startTime: new Date(startTime).toISOString(),
             endTime: new Date(endTime).toISOString(),
             latitude: latitude,

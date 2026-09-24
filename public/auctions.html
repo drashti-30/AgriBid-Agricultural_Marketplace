@@ -90,14 +90,6 @@
                                     <option value="quantityHigh">Quantity: High to Low</option>
                                 </select>
                             </div>
-                            <div class="col-6 col-lg-2">
-                                <label for="minPriceFilter" class="form-label fw-semibold">Min Bid (₹)</label>
-                                <input type="number" id="minPriceFilter" class="form-control" min="0" placeholder="0">
-                            </div>
-                            <div class="col-6 col-lg-2">
-                                <label for="maxPriceFilter" class="form-label fw-semibold">Max Bid (₹)</label>
-                                <input type="number" id="maxPriceFilter" class="form-control" min="0" placeholder="Any">
-                            </div>
                             <div class="col-12 col-lg-2 d-flex align-items-end">
                                 <button id="clearSearch" class="btn btn-outline-success w-100">Reset Filters</button>
                             </div>
@@ -206,10 +198,6 @@
                                 <p class="text-muted small mb-1">Current Bid</p>
                                 <strong id="bidCurrentAmount" class="fs-5 text-success">₹0</strong>
                             </div>
-                            <div class="col-6">
-                                <p class="text-muted small mb-1">Minimum Bid</p>
-                                <strong id="bidMinimumAmount" class="fs-5">₹0</strong>
-                            </div>
                         </div>
                     </div>
 
@@ -304,11 +292,6 @@
                                 <label for="basePrice" class="form-label fw-semibold">Base Price (₹)</label>
                                 <input type="number" id="basePrice" name="basePrice" class="form-control" placeholder="e.g. 20" min="1" step="0.01" required>
                             </div>
-                            <div class="col-12 col-md-6">
-                                <label for="minimumIncrement" class="form-label fw-semibold">Minimum Bid Increment (₹)</label>
-                                <input type="number" id="minimumIncrement" name="minimumIncrement" class="form-control" placeholder="e.g. 1" min="0.01" step="0.01" value="1" required>
-                            </div>
-
                             <div class="col-12 col-md-6">
                                 <label for="startTime" class="form-label fw-semibold">Start Time</label>
                                 <input type="datetime-local" id="startTime" name="startTime" class="form-control" required>
