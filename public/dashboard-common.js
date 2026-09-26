@@ -27,6 +27,11 @@ function formatDateTime(value) {
 }
 
 function getAutomaticAuctionStatus(auction) {
+    // Respect a farmer's manual early end of the auction (status "Closed" or "Cancelled" set on the server) instead of only trusting the clock.
+    if (auction.status === "Closed" || auction.status === "Cancelled") {
+        return auction.status;
+    }
+
     const start = new Date(auction.startTime).getTime();
     const end = new Date(auction.endTime).getTime();
 

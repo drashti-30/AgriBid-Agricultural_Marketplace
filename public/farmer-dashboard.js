@@ -283,7 +283,8 @@ function handleLogout() {
 }
 
 function openAuctionPage() {
-    window.location.href = "/auctions.html";
+    // Farmers create auctions from their own workspace now, not the public marketplace page, so send them to My Auctions and open the create-auction form there directly.
+    window.location.href = "/farmer-auctions.html?create=1";
 }
 
 function scrollToNotifications() {

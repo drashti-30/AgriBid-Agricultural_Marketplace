@@ -31,7 +31,6 @@ function setupEventListeners() {
     document.getElementById("clearSearch")?.addEventListener("click", clearFilters);
     document.getElementById("modalBidButton")?.addEventListener("click", openBidModal);
     document.getElementById("submitBidButton")?.addEventListener("click", submitBid);
-    document.getElementById("createAuctionButton")?.addEventListener("click", openCreateAuctionModal);
     document.getElementById("createAuctionForm")?.addEventListener("submit", saveAuction);
     document.getElementById("getLocationButton")?.addEventListener("click", getCurrentLocation);
     document.getElementById("wishlistFilter")?.addEventListener("change", renderFilteredAuctions);
@@ -954,13 +953,18 @@ async function saveAuction(event) {
             category: category,
             quantity: quantity,
             basePrice: basePrice,
-            currentBid: basePrice,
-            minimumIncrement: 0,
             startTime: new Date(startTime).toISOString(),
             endTime: new Date(endTime).toISOString(),
             latitude: latitude,
             longitude: longitude
         };
+
+        // Do not reset bidding data when editing an existing auction.
+        // The backend preserves currentBid and minimumIncrement when omitted.
+        if (!editingAuctionId) {
+            auctionData.currentBid = basePrice;
+            auctionData.minimumIncrement = 0;
+        }
 
         const url = editingAuctionId
             ? `/api/auctions/${editingAuctionId}`
@@ -1114,6 +1118,14 @@ async function refreshAutomaticStatuses() {
 }
 
 function getAuctionStatus(auction) {
+    // A farmer can end an auction early (status becomes "Closed"/"Cancelled"
+    // on the server before the scheduled end time). That manual status must
+    // win over the time-based calculation, otherwise the marketplace would
+    // keep showing the auction as bid-able until its original end time.
+    if (auction.status === "Closed" || auction.status === "Cancelled") {
+        return auction.status;
+    }
+
     const now = Date.now();
     const start = auction.startTime ? new Date(auction.startTime).getTime() : 0;
     const end = auction.endTime ? new Date(auction.endTime).getTime() : 0;
