@@ -233,7 +233,14 @@ async function changeBuyerProfile(event) {
 function getBuyerBidState(bid) {
     const auction = buyerAuctions.find(item => Number(item.id) === Number(bid.auctionId));
     if (!auction) return { auction: null, state: "Unknown" };
-    if (auction.status === "Closed") return { auction, state: Number(bid.amount) >= Number(auction.currentBid) ? "Won" : "Lost" };
+
+    if (auction.status === "Closed") {
+        const bidStatus = String(bid.status || "").toLowerCase();
+        if (bidStatus === "won") return { auction, state: "Won" };
+        if (bidStatus === "lost") return { auction, state: "Lost" };
+        return { auction, state: "Pending" };
+    }
+
     return { auction, state: Number(bid.amount) >= Number(auction.currentBid) ? "Winning" : "Outbid" };
 }
 

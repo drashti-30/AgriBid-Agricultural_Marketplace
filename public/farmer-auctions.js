@@ -12,6 +12,11 @@ async function initializeFarmerAuctions() {
     });
     document.getElementById("createAuctionForm")?.addEventListener("submit", submitCreateAuction);
     document.getElementById("getLocationButton")?.addEventListener("click", useCurrentLocation);
+    document.getElementById("closeAwardBuyerButton")?.addEventListener("click", closeAwardBuyerModal);
+    document.getElementById("cancelAwardBuyerButton")?.addEventListener("click", closeAwardBuyerModal);
+    document.getElementById("awardBuyerModal")?.addEventListener("click", event => {
+        if (event.target.id === "awardBuyerModal") closeAwardBuyerModal();
+    });
 
     await loadMyAuctions();
 
@@ -62,6 +67,7 @@ function renderMyAuctions() {
     container.innerHTML = myAuctions.map(auction => {
         // Farmers may only end an auction early while it can still be bid on.
         const canEnd = auction.status === "Active" || auction.status === "Scheduled";
+        const canAward = auction.status === "Closed";
 
         return `
         <article class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -80,6 +86,7 @@ function renderMyAuctions() {
             <div class="mt-5 flex gap-2">
                 <button data-auction-id="${escapeHTML(auction.id)}" class="manage-auction flex-1 rounded-lg bg-agrigreen-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-agrigreen-700">View and manage auction</button>
                 ${canEnd ? `<button data-auction-id="${escapeHTML(auction.id)}" class="end-auction rounded-lg border border-red-300 px-4 py-2.5 text-sm font-semibold text-red-600 hover:bg-red-50">End Auction</button>` : ""}
+                ${canAward ? `<button data-auction-id="${escapeHTML(auction.id)}" class="award-buyer rounded-lg border border-agrigreen-600 px-4 py-2.5 text-sm font-semibold text-agrigreen-700 hover:bg-green-50">Select Buyer</button>` : ""}
             </div>
         </article>`;
     }).join("");
@@ -93,6 +100,92 @@ function renderMyAuctions() {
     container.querySelectorAll(".end-auction").forEach(button => {
         button.addEventListener("click", () => endAuction(button.dataset.auctionId));
     });
+
+    container.querySelectorAll(".award-buyer").forEach(button => {
+        button.addEventListener("click", () => openAwardBuyerModal(button.dataset.auctionId));
+    });
+}
+
+async function openAwardBuyerModal(auctionId) {
+    const auction = myAuctions.find(item => String(item.id) === String(auctionId));
+    if (!auction) return;
+
+    const modal = document.getElementById("awardBuyerModal");
+    const list = document.getElementById("awardBuyerList");
+    const title = document.getElementById("awardBuyerTitle");
+
+    title.textContent = `Select Buyer — ${auction.cropName || auction.title || "Crop"}`;
+    list.innerHTML = `<div class="p-5 text-center text-slate-500">Loading bids…</div>`;
+    modal.classList.remove("hidden");
+    modal.classList.add("flex");
+
+    try {
+        const response = await fetch(`/api/bids?auctionId=${encodeURIComponent(auctionId)}`);
+        const bids = await response.json().catch(() => ([]));
+
+        if (!response.ok) throw new Error(bids.message || "Unable to load bids.");
+
+        if (!Array.isArray(bids) || !bids.length) {
+            list.innerHTML = `<div class="p-5 text-center text-slate-500">No bids were placed for this auction.</div>`;
+            return;
+        }
+
+        list.innerHTML = bids.map(bid => `
+            <div class="flex items-center justify-between gap-4 border-b border-slate-100 px-5 py-4 last:border-b-0">
+                <div>
+                    <p class="font-semibold text-slate-900">${escapeHTML(bid.buyerName || "Buyer")}</p>
+                    <p class="text-xs text-slate-500">Bid placed ${escapeHTML(formatDateTime(bid.time))}</p>
+                </div>
+                <div class="flex items-center gap-3">
+                    <strong class="text-agrigreen-700">${formatCurrency(bid.amount)}</strong>
+                    <button type="button" data-bid-id="${escapeHTML(bid.id)}" class="select-buyer rounded-lg bg-agrigreen-600 px-3 py-2 text-xs font-semibold text-white hover:bg-agrigreen-700">Select</button>
+                </div>
+            </div>
+        `).join("");
+
+        list.querySelectorAll(".select-buyer").forEach(button => {
+            button.addEventListener("click", () => awardBuyer(auctionId, button.dataset.bidId));
+        });
+    } catch (error) {
+        list.innerHTML = `<div class="p-5 text-center text-red-600">${escapeHTML(error.message)}</div>`;
+    }
+}
+
+function closeAwardBuyerModal() {
+    const modal = document.getElementById("awardBuyerModal");
+    if (!modal) return;
+    modal.classList.add("hidden");
+    modal.classList.remove("flex");
+}
+
+async function awardBuyer(auctionId, bidId) {
+    const confirmed = confirm(
+        "Award this crop to the selected buyer? The selected buyer does not have to be the highest bidder."
+    );
+    if (!confirmed) return;
+
+    try {
+        const response = await fetch(`/api/auctions/${encodeURIComponent(auctionId)}/award`, {
+            method: "PATCH",
+            headers: {
+                ...getAuthHeaders(),
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ bidId: Number(bidId) })
+        });
+
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(result.message || "Unable to select the buyer.");
+
+        closeAwardBuyerModal();
+        showPageMessage(
+            `Crop awarded to ${result.buyer?.buyerName || "the selected buyer"}.`,
+            "success"
+        );
+        await loadMyAuctions();
+    } catch (error) {
+        showPageMessage(error.message, "danger");
+    }
 }
 
 async function endAuction(auctionId) {
@@ -220,7 +313,7 @@ async function submitCreateAuction(event) {
                 quantity,
                 basePrice,
                 currentBid: basePrice,
-                minimumIncrement: 0,
+                // Internal database-compatible value; no increment rule is exposed or enforced.
                 startTime: new Date(startTime).toISOString(),
                 endTime: new Date(endTime).toISOString(),
                 latitude,

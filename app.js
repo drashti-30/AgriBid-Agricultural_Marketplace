@@ -75,9 +75,6 @@ function validateAuctionInput(body) {
     const currentBid = body.currentBid === undefined || body.currentBid === ""
         ? basePrice
         : toNumber(body.currentBid);
-    const minimumIncrement = body.minimumIncrement === undefined || body.minimumIncrement === ""
-        ? 0
-        : toNumber(body.minimumIncrement);
     const startTime = toMySQLDateTime(body.startTime);
     const endTime = toMySQLDateTime(body.endTime);
 
@@ -88,10 +85,6 @@ function validateAuctionInput(body) {
 
     if (currentBid === null || currentBid < basePrice) {
         return { error: "Current bid must be greater than or equal to the base price." };
-    }
-
-    if (minimumIncrement === null || minimumIncrement < 0) {
-        return { error: "Minimum increment cannot be negative." };
     }
 
     if (!startTime || !endTime) return { error: "Valid startTime and endTime are required." };
@@ -110,7 +103,6 @@ function validateAuctionInput(body) {
             quality: body.quality || null,
             basePrice,
             currentBid,
-            minimumIncrement,
             status: normalizeStatus(body.status) || "scheduled",
             startTime,
             endTime,
@@ -176,7 +168,6 @@ async function getAuctionRows(whereClause = "", parameters = []) {
         SELECT a.auction_id AS id, a.crop_id AS cropId, a.farmer_id AS farmerId,
             a.title, a.description, a.quantity, a.unit, a.quality,
             a.starting_price AS basePrice, a.current_bid AS currentBid,
-            a.minimum_increment AS minimumIncrement,
             CASE a.status
                 WHEN 'active' THEN 'Active'
                 WHEN 'scheduled' THEN 'Scheduled'
@@ -669,10 +660,10 @@ const server = http.createServer(async (req, res) => {
                 INSERT INTO auctions (
                     farmer_id, crop_id, title, description, quantity,
                     unit, quality, starting_price, current_bid,
-                    minimum_increment, start_time, end_time, status,
+                    start_time, end_time, status,
                     latitude, longitude, location
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `, [
                 farmerId,
                 auction.cropId,
@@ -683,7 +674,6 @@ const server = http.createServer(async (req, res) => {
                 auction.quality,
                 auction.basePrice,
                 auction.currentBid,
-                auction.minimumIncrement,
                 auction.startTime,
                 auction.endTime,
                 auction.status,
@@ -704,7 +694,6 @@ const server = http.createServer(async (req, res) => {
                     a.quality,
                     a.starting_price AS basePrice,
                     a.current_bid AS currentBid,
-                    a.minimum_increment AS minimumIncrement,
                     CASE a.status
                         WHEN 'active' THEN 'Active'
                         WHEN 'scheduled' THEN 'Scheduled'
@@ -730,6 +719,106 @@ const server = http.createServer(async (req, res) => {
             sendJSON(res, 201, {
                 message: "Auction added successfully.",
                 auction: rows[0]
+            });
+            return;
+        }
+
+        if (pathname.startsWith("/api/auctions/") && pathname.endsWith("/award") && req.method === "PATCH") {
+            const user = await authenticate(req, res);
+            if (!user) return;
+            req.user = user;
+
+            if (!authorize("farmer")(req, res)) return;
+
+            const parts = pathname.split("/").filter(Boolean);
+            const id = Number(parts[2]);
+
+            if (!Number.isInteger(id) || id <= 0) {
+                sendJSON(res, 400, { message: "Invalid auction ID." });
+                return;
+            }
+
+            const [farmerRows] = await db.execute(
+                `SELECT farmer_id
+                 FROM farmers
+                 WHERE user_id = ?
+                 LIMIT 1`,
+                [req.user.user_id]
+            );
+
+            if (!farmerRows.length) {
+                sendJSON(res, 403, { message: "Farmer profile not found." });
+                return;
+            }
+
+            const farmerId = farmerRows[0].farmer_id;
+            const body = await getRequestBody(req);
+            const bidId = Number(body.bidId);
+
+            if (!Number.isInteger(bidId) || bidId <= 0) {
+                sendJSON(res, 400, { message: "Invalid bid ID." });
+                return;
+            }
+
+            const [auctionRows] = await db.execute(`
+                SELECT auction_id, farmer_id, status
+                FROM auctions
+                WHERE auction_id = ?
+                LIMIT 1
+            `, [id]);
+
+            if (!auctionRows.length) {
+                sendJSON(res, 404, { message: "Auction not found." });
+                return;
+            }
+
+            const auction = auctionRows[0];
+
+            if (Number(auction.farmer_id) !== Number(farmerId)) {
+                sendJSON(res, 403, { message: "You can only award your own auctions." });
+                return;
+            }
+
+            if (String(auction.status).toLowerCase() !== "closed") {
+                sendJSON(res, 400, { message: "Close the auction before selecting a buyer." });
+                return;
+            }
+
+            const [bidRows] = await db.execute(`
+                SELECT
+                    b.bid_id AS id,
+                    b.auction_id AS auctionId,
+                    b.amount,
+                    u.name AS buyerName
+                FROM bids b
+                INNER JOIN buyers byrs ON b.buyer_id = byrs.buyer_id
+                INNER JOIN users u ON byrs.user_id = u.user_id
+                WHERE b.bid_id = ? AND b.auction_id = ?
+                LIMIT 1
+            `, [bidId, id]);
+
+            if (!bidRows.length) {
+                sendJSON(res, 404, { message: "Selected bid was not found for this auction." });
+                return;
+            }
+
+            // The farmer's choice is authoritative; the highest bid is not
+            // automatically treated as the winner.
+            await db.execute(`
+                UPDATE bids
+                SET status = 'lost'
+                WHERE auction_id = ?
+            `, [id]);
+
+            await db.execute(`
+                UPDATE bids
+                SET status = 'won'
+                WHERE bid_id = ? AND auction_id = ?
+            `, [bidId, id]);
+
+            sendJSON(res, 200, {
+                message: "Crop awarded to the selected buyer successfully.",
+                buyer: bidRows[0]
             });
             return;
         }
@@ -811,7 +900,6 @@ const server = http.createServer(async (req, res) => {
                     quality: body.quality ?? current.quality,
                     basePrice: body.basePrice ?? current.starting_price,
                     currentBid: body.currentBid ?? current.current_bid,
-                    minimumIncrement: body.minimumIncrement ?? current.minimum_increment,
                     status: body.status ?? current.status,
                     startTime: body.startTime ?? current.start_time,
                     endTime: body.endTime ?? current.end_time,
@@ -841,7 +929,6 @@ const server = http.createServer(async (req, res) => {
                         quality = ?,
                         starting_price = ?,
                         current_bid = ?,
-                        minimum_increment = ?,
                         start_time = ?,
                         end_time = ?,
                         status = ?,
@@ -859,7 +946,6 @@ const server = http.createServer(async (req, res) => {
                     auction.quality,
                     auction.basePrice,
                     auction.currentBid,
-                    auction.minimumIncrement,
                     auction.startTime,
                     auction.endTime,
                     auction.status,
@@ -882,7 +968,6 @@ const server = http.createServer(async (req, res) => {
                     a.quality,
                     a.starting_price AS basePrice,
                     a.current_bid AS currentBid,
-                    a.minimum_increment AS minimumIncrement,
                     CASE a.status
                         WHEN 'active' THEN 'Active'
                         WHEN 'scheduled' THEN 'Scheduled'

@@ -8,7 +8,6 @@
     "unit": "kg",
     "basePrice": 20,
     "currentBid": 29,
-    "minimumIncrement": 1,
     "status": "Active",
     "startTime": "2026-09-12T10:00:00",
     "endTime": "2026-09-15T22:00:00"
@@ -22,7 +21,6 @@
     "unit": "kg",
     "basePrice": 35,
     "currentBid": 40,
-    "minimumIncrement": 2,
     "status": "Closed",
     "startTime": "2026-09-05T09:00:00",
     "endTime": "2026-09-11T20:00:00"
@@ -37,7 +35,6 @@
     "quality": null,
     "basePrice": 200,
     "currentBid": 225,
-    "minimumIncrement": 25,
     "status": "Active",
     "startTime": "2026-09-12T16:41:00.000Z",
     "endTime": "2026-09-30T16:41:00.000Z",
@@ -54,7 +51,6 @@
     "quality": null,
     "basePrice": 375,
     "currentBid": 375,
-    "minimumIncrement": 20,
     "status": "Closed",
     "startTime": "2026-09-03T16:44:00.000Z",
     "endTime": "2026-09-11T16:44:00.000Z",

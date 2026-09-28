@@ -960,10 +960,8 @@ async function saveAuction(event) {
         };
 
         // Do not reset bidding data when editing an existing auction.
-        // The backend preserves currentBid and minimumIncrement when omitted.
         if (!editingAuctionId) {
             auctionData.currentBid = basePrice;
-            auctionData.minimumIncrement = 0;
         }
 
         const url = editingAuctionId

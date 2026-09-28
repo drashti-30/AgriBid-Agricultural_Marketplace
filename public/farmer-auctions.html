@@ -108,6 +108,21 @@
         </div>
     </div>
 
+    <div id="awardBuyerModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/50 p-4">
+        <div class="max-h-[80vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white shadow-xl">
+            <div class="flex items-center justify-between rounded-t-2xl bg-agrigreen-700 px-6 py-4 text-white">
+                <h2 id="awardBuyerTitle" class="text-lg font-bold">Select Buyer</h2>
+                <button type="button" id="closeAwardBuyerButton" class="text-2xl leading-none text-white/80 hover:text-white" aria-label="Close">&times;</button>
+            </div>
+            <div id="awardBuyerList">
+                <div class="p-5 text-center text-slate-500">Loading bids…</div>
+            </div>
+            <div class="flex justify-end border-t border-slate-100 px-6 py-4">
+                <button type="button" id="cancelAwardBuyerButton" class="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50">Cancel</button>
+            </div>
+        </div>
+    </div>
+
     <script src="/dashboard-common.js"></script>
     <script src="/farmer-auctions.js"></script>
 </body>

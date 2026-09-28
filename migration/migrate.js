@@ -264,6 +264,35 @@ async function migrateBuyers(connection, bids) {
   return buyerIdMap;
 }
 
+async function removeAuctionIncrementSchema(connection) {
+  const [columns] = await connection.execute(`
+    SELECT COLUMN_NAME
+    FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'auctions'
+      AND COLUMN_NAME = 'minimum_increment'
+    LIMIT 1
+  `);
+
+  if (!columns.length) return;
+
+  const [constraints] = await connection.execute(`
+    SELECT CONSTRAINT_NAME
+    FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS
+    WHERE CONSTRAINT_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'auctions'
+      AND CONSTRAINT_NAME = 'chk_auction_increment'
+    LIMIT 1
+  `);
+
+  if (constraints.length) {
+    await connection.query(`ALTER TABLE auctions DROP CHECK chk_auction_increment`);
+  }
+
+  await connection.query(`ALTER TABLE auctions DROP COLUMN minimum_increment`);
+  console.log('Removed auction minimum bid increment from the database.');
+}
+
 async function migrateAuctions(connection, auctions, cropIdMap, farmerIdMap) {
   for (const auction of auctions) {
     const cropId = cropIdMap.get(Number(auction.cropId));
@@ -285,8 +314,8 @@ async function migrateAuctions(connection, auctions, cropIdMap, farmerIdMap) {
       `INSERT INTO auctions
         (auction_id, farmer_id, crop_id, title, description,
          quantity, unit, quality, starting_price, current_bid,
-         minimum_increment, start_time, end_time, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         start_time, end_time, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE
         farmer_id = VALUES(farmer_id),
         crop_id = VALUES(crop_id),
@@ -297,7 +326,6 @@ async function migrateAuctions(connection, auctions, cropIdMap, farmerIdMap) {
         quality = VALUES(quality),
         starting_price = VALUES(starting_price),
         current_bid = VALUES(current_bid),
-        minimum_increment = VALUES(minimum_increment),
         start_time = VALUES(start_time),
         end_time = VALUES(end_time),
         status = VALUES(status)`,
@@ -312,7 +340,6 @@ async function migrateAuctions(connection, auctions, cropIdMap, farmerIdMap) {
         null,
         Number(auction.basePrice),
         Number(auction.currentBid),
-        Number(auction.minimumIncrement),
         toMySqlDateTime(auction.startTime),
         toMySqlDateTime(auction.endTime),
         normalizeStatus(auction.status)
@@ -357,6 +384,38 @@ async function migrateBids(connection, bids, buyerIdMap) {
   console.log(`Bids migrated: ${bids.length}`);
 }
 
+async function ensureBidStatusSchema(connection) {
+  const [columns] = await connection.execute(`
+    SELECT COLUMN_TYPE, IS_NULLABLE, COLUMN_DEFAULT
+    FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'bids'
+      AND COLUMN_NAME = 'status'
+    LIMIT 1
+  `);
+
+  if (!columns.length) {
+    throw new Error("bids.status column was not found.");
+  }
+
+  const columnType = String(columns[0].COLUMN_TYPE || "").toLowerCase();
+
+  if (
+    columnType.includes("'won'") &&
+    columnType.includes("'lost'")
+  ) {
+    return;
+  }
+
+  await connection.query(`
+    ALTER TABLE bids
+    MODIFY COLUMN status ENUM('valid', 'withdrawn', 'rejected', 'won', 'lost')
+    NOT NULL DEFAULT 'valid'
+  `);
+
+  console.log("Updated bids.status to support valid, withdrawn, rejected, won and lost.");
+}
+
 async function main() {
   const connection = await pool.getConnection();
 
@@ -375,6 +434,8 @@ async function main() {
     console.log(`  Bids: ${bids.length}\n`);
 
     await connection.beginTransaction();
+
+    await removeAuctionIncrementSchema(connection);
 
     const cropIdMap = await migrateCrops(connection, crops);
     const farmerIdMap = await migrateFarmers(connection, farmers);
