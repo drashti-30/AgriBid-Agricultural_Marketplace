@@ -165,7 +165,7 @@ async function resolveCropId(body, fallbackCropId = null) {
 // The workspace's farmer ID is always resolved on the server from the JWT.
 async function getAuctionRows(whereClause = "", parameters = []) {
     const [rows] = await db.execute(`
-        SELECT a.auction_id AS id, a.crop_id AS cropId, a.farmer_id AS farmerId,
+        SELECT a.auction_id AS id, a.crop_id AS cropId, a.farmer_id AS farmerId, f.user_id AS farmerUserId,
             a.title, a.description, a.quantity, a.unit, a.quality,
             a.starting_price AS basePrice, a.current_bid AS currentBid,
             CASE a.status

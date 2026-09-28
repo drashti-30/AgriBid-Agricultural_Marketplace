@@ -23,10 +23,8 @@ async function initializeFarmerDashboard() {
         const farmerProfile = data.farmers.find(farmer => Number(farmer.userId) === Number(currentUser.user_id));
         FARMER_ID = farmerProfile ? Number(farmerProfile.id) : null;
 
-        const farmerName = FARMER_NAME.toLowerCase();
         farmerAuctions = data.auctions.filter(auction =>
-            (FARMER_ID !== null && Number(auction.farmerId) === FARMER_ID) ||
-            String(auction.farmerName || "").toLowerCase() === farmerName
+            FARMER_ID !== null && Number(auction.farmerId) === FARMER_ID
         );
 
         const nameElement = document.getElementById("farmerNameDisplay");

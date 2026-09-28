@@ -3,6 +3,7 @@ let selectedAuction = null;
 let editingAuctionId = null;
 let countdownTimer = null;
 let comparisonSelection = [];
+let currentUser = null;
 
 const STORAGE_KEYS = {
     AUCTION_DRAFT: "agribidAuctionDraft",
@@ -330,6 +331,24 @@ async function loadAuctions() {
     setLoadingState(true);
 
     try {
+        // Editing is available only to an authenticated farmer who owns the auction.
+        // Marketplace browsing remains available to everyone, so authentication is optional here.
+        currentUser = null;
+        const token = getAuthToken();
+        if (token) {
+            try {
+                const userResponse = await fetch("/api/auth/me", {
+                    headers: getAuthHeaders()
+                });
+                if (userResponse.ok) {
+                    const userData = await userResponse.json();
+                    currentUser = userData.user || null;
+                }
+            } catch (authError) {
+                console.warn("Unable to determine current user for auction edit controls:", authError);
+            }
+        }
+
         const response = await fetch("/api/auctions");
         const result = await response.json();
 
@@ -415,6 +434,14 @@ function getFilteredAuctions() {
     });
 
     return filtered;
+}
+
+function canEditAuction(auction) {
+    return Boolean(
+        currentUser &&
+        String(currentUser.role || "").toLowerCase() === "farmer" &&
+        Number(auction.farmerUserId) === Number(currentUser.user_id)
+    );
 }
 
 function renderFilteredAuctions() {
@@ -519,7 +546,7 @@ function createAuctionCard(auction) {
 
                         <div class="d-flex gap-2">
                             <button class="btn btn-success flex-grow-1" onclick="openAuctionModal(${auction.id})">View Auction</button>
-                            <button class="btn btn-outline-primary" onclick="openEditAuctionModal(${auction.id})" title="Edit Auction">Edit</button>
+                            ${canEditAuction(auction) ? `<button class="btn btn-outline-primary" onclick="openEditAuctionModal(${auction.id})" title="Edit Auction">Edit</button>` : ""}
                         </div>
                     </div>
                 </div>
@@ -619,7 +646,7 @@ function createAuctionRow(auction) {
             <td>
                 <div class="d-flex gap-2">
                     <button class="btn btn-sm btn-success" onclick="openAuctionModal(${auction.id})">View</button>
-                    <button class="btn btn-sm btn-outline-primary" onclick="openEditAuctionModal(${auction.id})">Edit</button>
+                    ${canEditAuction(auction) ? `<button class="btn btn-sm btn-outline-primary" onclick="openEditAuctionModal(${auction.id})">Edit</button>` : ""}
                 </div>
             </td>
         </tr>
@@ -795,6 +822,11 @@ function openEditAuctionModal(auctionId) {
     const auction = allAuctions.find(item => Number(item.id) === Number(auctionId));
     if (!auction) {
         showAuctionAlert("Auction not found.", "danger");
+        return;
+    }
+
+    if (!canEditAuction(auction)) {
+        showAuctionAlert("Only the farmer who created this auction can edit it.", "danger");
         return;
     }
 
