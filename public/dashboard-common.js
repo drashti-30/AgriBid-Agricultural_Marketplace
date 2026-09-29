@@ -381,11 +381,9 @@ function renderSimpleBarChart(
 
 /*
  * Get the currently authenticated user from the backend.
- *
- * Uses the existing Phase 11 JWT stored in sessionStorage.
  */
 async function getCurrentUser() {
-    const token = sessionStorage.getItem("agribidToken");
+    const token = getAuthToken();
 
     if (!token) throw new Error("Authentication required.");
 
@@ -407,24 +405,110 @@ async function getCurrentUser() {
     return data.user;
 }
 
-/*
- * Return the JWT saved by the existing Phase 11 login flow.
- *
- * Phase 11 stores the active login token in sessionStorage.
- * sessionStorage is checked first so the current login session
- * always takes priority.
- */
+const AUTH_STORAGE_KEYS = {
+    TOKEN: "agribidToken",
+    USER: "agribidUser"
+};
+
 function getAuthToken() {
     return (
-        sessionStorage.getItem("agribidToken") ||
-        localStorage.getItem("agribidToken") ||
+        sessionStorage.getItem(AUTH_STORAGE_KEYS.TOKEN) ||
+        localStorage.getItem(AUTH_STORAGE_KEYS.TOKEN) ||
         ""
     );
 }
 
-/*
- * Headers for APIs protected by Phase 12 RBAC.
- */
+function getStoredAuthUser() {
+    const raw = sessionStorage.getItem(AUTH_STORAGE_KEYS.USER) || localStorage.getItem(AUTH_STORAGE_KEYS.USER);
+    if (!raw) return null;
+    try { return JSON.parse(raw); } catch (_) { return null; }
+}
+
+function clearAuthSession() {
+    localStorage.removeItem(AUTH_STORAGE_KEYS.TOKEN);
+    localStorage.removeItem(AUTH_STORAGE_KEYS.USER);
+    sessionStorage.removeItem(AUTH_STORAGE_KEYS.TOKEN);
+    sessionStorage.removeItem(AUTH_STORAGE_KEYS.USER);
+}
+
+function logoutAndRedirect() {
+    clearAuthSession();
+    // Replace the current authenticated page so Back cannot return to it from the login flow.
+    window.location.replace("/login.html");
+}
+
+const PROTECTED_ROUTE_ROLES = {
+    "/farmer-dashboard.html": "farmer",
+    "/farmer-auctions.html": "farmer",
+    "/buyer-dashboard.html": "buyer",
+    "/admin-dashboard.html": "admin"
+};
+
+// Prevent stale authenticated content from flashing while a protected route is revalidated.
+if (PROTECTED_ROUTE_ROLES[window.location.pathname]) {
+    document.documentElement.style.visibility = "hidden";
+}
+
+async function enforceProtectedRoute() {
+    const requiredRole = PROTECTED_ROUTE_ROLES[window.location.pathname];
+    if (!requiredRole) return true;
+
+    const token = getAuthToken();
+    if (!token) {
+        window.location.replace("/login.html");
+        return false;
+    }
+
+    // Fail fast when switching accounts, while the server remains authoritative.
+    const storedUser = getStoredAuthUser();
+    if (storedUser && String(storedUser.role || "").toLowerCase() !== requiredRole) {
+        clearAuthSession();
+        window.location.replace("/login.html");
+        return false;
+    }
+
+    try {
+        const response = await fetch("/api/auth/me", {
+            method: "GET",
+            cache: "no-store",
+            headers: { Authorization: `Bearer ${token}` }
+        });
+        const data = await response.json().catch(() => ({}));
+        const actualRole = String(data.user?.role || "").toLowerCase();
+
+        if (!response.ok || actualRole !== requiredRole) {
+            clearAuthSession();
+            window.location.replace("/login.html");
+            return false;
+        }
+
+        // Keep the authoritative current user, not stale data from a previous role.
+        sessionStorage.setItem(AUTH_STORAGE_KEYS.USER, JSON.stringify(data.user));
+        if (localStorage.getItem(AUTH_STORAGE_KEYS.TOKEN)) {
+            localStorage.setItem(AUTH_STORAGE_KEYS.USER, JSON.stringify(data.user));
+        }
+        document.documentElement.style.visibility = "visible";
+        return true;
+    } catch (_) {
+        clearAuthSession();
+        window.location.replace("/login.html");
+        return false;
+    }
+}
+
+function installAuthNavigationGuards() {
+    // Revalidate whenever a page is restored from browser history/BFCache.
+    window.addEventListener("pageshow", event => {
+        if (event.persisted || PROTECTED_ROUTE_ROLES[window.location.pathname]) {
+            enforceProtectedRoute();
+        }
+    });
+}
+
+installAuthNavigationGuards();
+document.addEventListener("DOMContentLoaded", enforceProtectedRoute);
+
+
 function getAuthHeaders() {
     const token = getAuthToken();
     return token ? { Authorization: `Bearer ${token}` } : {};

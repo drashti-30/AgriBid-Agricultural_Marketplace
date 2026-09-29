@@ -198,13 +198,7 @@ function updateBuyerIdentity(user) {
 function setupBuyerEvents() {
     document.getElementById("mobileMenuButton")?.addEventListener("click", () => document.getElementById("mobileMenu")?.classList.toggle("hidden"));
     document.getElementById("logoutButton")?.addEventListener("click", () => {
-        localStorage.removeItem("agribidUser");
-        localStorage.removeItem("agribidToken");
-
-        sessionStorage.removeItem("agribidUser");
-        sessionStorage.removeItem("agribidToken");
-
-        window.location.href = "/login.html";
+        logoutAndRedirect();
     });
     document.getElementById("viewWishlistButton")?.addEventListener("click", () => window.location.href = "/auctions.html?wishlist=1");
     document.getElementById("viewNotificationsButton")?.addEventListener("click", () => document.getElementById("buyerNotifications")?.scrollIntoView({ behavior: "smooth" }));

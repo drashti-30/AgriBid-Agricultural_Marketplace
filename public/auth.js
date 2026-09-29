@@ -156,5 +156,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
 window.AgriBidAuth = {
     getToken: getStoredToken,
-    clearSession: clearAuthSession
+    clearSession: clearAuthSession,
+    logout: () => {
+        clearAuthSession();
+        window.location.replace("/login.html");
+    }
 };

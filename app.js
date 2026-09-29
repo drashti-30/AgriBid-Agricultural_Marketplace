@@ -137,7 +137,13 @@ function serveStaticFile(res, pathname) {
         ".ico": "image/x-icon"
     };
 
-    res.writeHead(200, { "Content-Type": contentTypes[extension] || "application/octet-stream" });
+    const headers = { "Content-Type": contentTypes[extension] || "application/octet-stream" };
+    if (extension === ".html") {
+        headers["Cache-Control"] = "no-store, no-cache, must-revalidate, proxy-revalidate";
+        headers["Pragma"] = "no-cache";
+        headers["Expires"] = "0";
+    }
+    res.writeHead(200, headers);
     res.end(fs.readFileSync(filePath));
     return true;
 }

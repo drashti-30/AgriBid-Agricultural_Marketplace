@@ -42,11 +42,7 @@ function setupAdminEvents() {
     document.getElementById("mobileMenuButton")?.addEventListener("click", () => document.getElementById("mobileMenu")?.classList.toggle("hidden"));
     document
     .getElementById("logoutButton")?.addEventListener("click", () => {
-        localStorage.removeItem("agribidUser");
-        localStorage.removeItem("agribidToken");
-        sessionStorage.removeItem("agribidUser");
-        sessionStorage.removeItem("agribidToken");
-        window.location.href = "/login.html";
+logoutAndRedirect();
     });
     document.getElementById("markAllNotificationsRead")?.addEventListener("click", markAllAdminNotificationsRead);
     document.querySelector("[data-theme-toggle]")?.addEventListener("click", toggleTheme);

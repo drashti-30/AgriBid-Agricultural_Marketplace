@@ -276,8 +276,7 @@ function toggleMobileMenu() {
 }
 
 function handleLogout() {
-    localStorage.removeItem("agribidUser");
-    window.location.href = "/login.html";
+    logoutAndRedirect();
 }
 
 function openAuctionPage() {
