@@ -396,6 +396,58 @@ const server = http.createServer(async (req, res) => {
             return;
         }
 
+        // Admin can close any auction when misconduct or another marketplace issue requires it.
+        if (pathname.startsWith("/api/admin/auctions/") && pathname.endsWith("/status") && req.method === "PATCH") {
+            const user = await authenticate(req, res);
+            if (!user) return;
+            req.user = user;
+
+            if (!authorize("admin")(req, res)) return;
+
+            const parts = pathname.split("/").filter(Boolean);
+            const auctionId = Number(parts[3]);
+
+            if (!Number.isInteger(auctionId) || auctionId <= 0) {
+                sendJSON(res, 400, { message: "Invalid auction ID." });
+                return;
+            }
+
+            const body = await getRequestBody(req);
+            const status = normalizeStatus(body.status);
+
+            if (status !== "closed") {
+                sendJSON(res, 400, { message: "Admin can only close an auction through this action." });
+                return;
+            }
+
+            const [result] = await db.execute(`
+                UPDATE auctions
+                SET status = 'closed'
+                WHERE auction_id = ?
+            `, [auctionId]);
+
+            if (!result.affectedRows) {
+                const [auctionRows] = await db.execute(`
+                    SELECT auction_id
+                    FROM auctions
+                    WHERE auction_id = ?
+                    LIMIT 1
+                `, [auctionId]);
+
+                if (!auctionRows.length) {
+                    sendJSON(res, 404, { message: "Auction not found." });
+                    return;
+                }
+            }
+
+            sendJSON(res, 200, {
+                message: "Auction closed by admin successfully.",
+                auctionId,
+                status: "closed"
+            });
+            return;
+        }
+
         if (pathname === "/api/admin/buyers" && req.method === "GET") {
             const user = await authenticate(req, res);
             if (!user) return;
@@ -419,6 +471,82 @@ const server = http.createServer(async (req, res) => {
             `);
 
             sendJSON(res, 200, rows);
+            return;
+        }
+
+        if (pathname.startsWith("/api/admin/buyers/") && req.method === "DELETE") {
+            const user = await authenticate(req, res);
+            if (!user) return;
+            req.user = user;
+
+            if (!authorize("admin")(req, res)) return;
+
+            const parts = pathname.split("/").filter(Boolean);
+            const buyerId = Number(parts[3]);
+
+            if (!Number.isInteger(buyerId) || buyerId <= 0) {
+                sendJSON(res, 400, { message: "Invalid buyer ID." });
+                return;
+            }
+
+            const connection = await db.getConnection();
+            try {
+                await connection.beginTransaction();
+
+                const [buyerRows] = await connection.execute(`
+                    SELECT buyer_id, user_id
+                    FROM buyers
+                    WHERE buyer_id = ?
+                    LIMIT 1
+                `, [buyerId]);
+
+                if (!buyerRows.length) {
+                    await connection.rollback();
+                    sendJSON(res, 404, { message: "Buyer not found." });
+                    return;
+                }
+
+                const buyerUserId = buyerRows[0].user_id;
+
+                const [affectedAuctionRows] = await connection.execute(`
+                    SELECT DISTINCT auction_id
+                    FROM bids
+                    WHERE buyer_id = ?
+                `, [buyerId]);
+
+                // Remove dependent records first, then the buyer profile and its user account.
+                await connection.execute(`DELETE FROM bids WHERE buyer_id = ?`, [buyerId]);
+
+                // Keep current bid values consistent for auctions whose bid history changed.
+                for (const row of affectedAuctionRows) {
+                    await connection.execute(`
+                        UPDATE auctions a
+                        SET a.current_bid = COALESCE((
+                            SELECT MAX(b.amount)
+                            FROM bids b
+                            WHERE b.auction_id = a.auction_id
+                        ), a.starting_price)
+                        WHERE a.auction_id = ?
+                    `, [row.auction_id]);
+                }
+
+                await connection.execute(`DELETE FROM verifications WHERE user_id = ?`, [buyerUserId]);
+                await connection.execute(`DELETE FROM buyers WHERE buyer_id = ?`, [buyerId]);
+                await connection.execute(`DELETE FROM users WHERE user_id = ?`, [buyerUserId]);
+
+                await connection.commit();
+
+                sendJSON(res, 200, {
+                    message: "Buyer deleted successfully.",
+                    buyerId
+                });
+            } catch (error) {
+                await connection.rollback();
+                throw error;
+            } finally {
+                connection.release();
+            }
+
             return;
         }
 

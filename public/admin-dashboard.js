@@ -74,9 +74,47 @@ function renderAdminAuctions() {
                 <td class="fw-semibold text-success">${formatCurrency(auction.currentBid || auction.basePrice)}</td>
                 <td><span class="status-dot ${auction.status.toLowerCase()}"></span>${escapeHTML(auction.status)}</td>
                 <td>${bidCount}</td>
+                <td>
+                    ${auction.status !== "Closed" && auction.status !== "Cancelled"
+                        ? `<button class="btn btn-sm btn-outline-danger" data-close-auction-id="${auction.id}">Close Auction</button>`
+                        : `<span class="text-muted small">No action</span>`}
+                </td>
             </tr>
         `;
-    }).join("") || `<tr><td colspan="5" class="text-center text-muted py-4">No auctions found.</td></tr>`;
+    }).join("") || `<tr><td colspan="6" class="text-center text-muted py-4">No auctions found.</td></tr>`;
+
+    container.querySelectorAll("[data-close-auction-id]").forEach(button => {
+        button.addEventListener("click", () => closeAuctionAsAdmin(button.dataset.closeAuctionId));
+    });
+}
+
+async function closeAuctionAsAdmin(auctionId) {
+    const auction = adminAuctions.find(item => Number(item.id) === Number(auctionId));
+    if (!auction) return;
+
+    const confirmed = window.confirm(`Close auction #${auctionId}? This action is for admin misconduct control and will stop the auction.`);
+    if (!confirmed) return;
+
+    try {
+        const response = await fetch(`/api/admin/auctions/${auctionId}/status`, {
+            method: "PATCH",
+            headers: getAuthHeaders({ "Content-Type": "application/json" }),
+            body: JSON.stringify({ status: "closed" })
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.message || "Unable to close auction.");
+
+        auction.status = "Closed";
+        renderAdminStatistics();
+        renderAdminAuctions();
+        renderAdminActivity();
+        renderAdminInsights();
+        showDashboardMessage(result.message, "success");
+        await refreshAdminNotifications();
+    } catch (error) {
+        console.error("Admin close auction error:", error);
+        showDashboardMessage(error.message || "Unable to close auction.", "danger");
+    }
 }
 
 function renderAdminActivity() {
@@ -149,7 +187,10 @@ function renderBuyerVerification() {
                 <td>${escapeHTML(buyer.email || "Not provided")}</td>
                 <td>${escapeHTML(buyer.phone || "Not provided")}</td>
                 <td><span class="badge ${verified ? "text-bg-success" : "text-bg-warning"}">${verified ? "Verified" : "Pending"}</span></td>
-                <td><button class="btn btn-sm ${verified ? "btn-outline-secondary" : "btn-success"}" data-buyer-verify-id="${buyer.id}" data-next-value="${!verified}">${verified ? "Mark Unverified" : "Verify Buyer"}</button></td>
+                <td class="d-flex gap-2 flex-wrap">
+                    <button class="btn btn-sm ${verified ? "btn-outline-secondary" : "btn-success"}" data-buyer-verify-id="${buyer.id}" data-next-value="${!verified}">${verified ? "Mark Unverified" : "Verify Buyer"}</button>
+                    <button class="btn btn-sm btn-outline-danger" data-buyer-delete-id="${buyer.id}">Delete Buyer</button>
+                </td>
             </tr>`;
     }).join("");
 
@@ -160,6 +201,40 @@ function renderBuyerVerification() {
             updateBuyerVerification(buyerId, verified);
         });
     });
+
+    container.querySelectorAll("[data-buyer-delete-id]").forEach(button => {
+        button.addEventListener("click", () => deleteBuyerAsAdmin(button.dataset.buyerDeleteId));
+    });
+}
+
+async function deleteBuyerAsAdmin(buyerId) {
+    const buyer = adminBuyers.find(item => Number(item.id) === Number(buyerId));
+    if (!buyer) return;
+
+    const confirmed = window.confirm(`Delete buyer "${buyer.name}"? This will permanently remove the buyer account and its bids.`);
+    if (!confirmed) return;
+
+    try {
+        const response = await fetch(`/api/admin/buyers/${buyerId}`, {
+            method: "DELETE",
+            headers: getAuthHeaders()
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.message || "Unable to delete buyer.");
+
+        adminBuyers = adminBuyers.filter(item => Number(item.id) !== Number(buyerId));
+        adminBids = adminBids.filter(bid => Number(bid.buyerId) !== Number(buyerId));
+        renderBuyerVerification();
+        renderAdminStatistics();
+        renderAdminAuctions();
+        renderAdminActivity();
+        renderAdminInsights();
+        showDashboardMessage(result.message, "success");
+        await refreshAdminNotifications();
+    } catch (error) {
+        console.error("Admin delete buyer error:", error);
+        showDashboardMessage(error.message || "Unable to delete buyer.", "danger");
+    }
 }
 
 async function updateBuyerVerification(buyerId, verified) {
